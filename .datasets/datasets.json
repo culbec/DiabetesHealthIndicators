@@ -1,0 +1,9 @@
+[
+    {
+        "name": "DiabetesHealthIndicators",
+        "info": {
+            "url": "https://www.kaggle.com/api/v1/datasets/download/mohankrishnathalla/diabetes-health-indicators-dataset",
+            "save_path": "diabetes_health_indicators.zip"
+        }
+    }
+]
