@@ -1,0 +1,138 @@
+\documentclass[a4paper]{article}
+\pagenumbering{gobble}
+
+\usepackage{style}
+
+% Keywords command
+\providecommand{\keywords}[1]
+{
+  \small	
+  \textbf{\textit{Keywords---}} #1
+}
+
+\title{
+	Prediction of Diabetes Risk according to Social \& Health Indicators \\
+	\large \textit{Supervised Regression}
+}
+
+\author{Alexandru Profir$^{1}$ \\
+        \small $^{1}$Babe\cb{s}-Bolyai University
+}
+
+%% \date{} % Comment this line to show today's date
+
+\begin{document}
+
+\maketitle
+\hspace{10pt}
+
+\section{Problem definition}
+
+\par The purpose of this particular approach is to develop a framework capable of predicting the \textit{diabetes risk score} based on a set of individual health indicators. This predictive capability can assist in preventive healthcare and early detection, helping individuals and practitioners make informed medical decisions.
+
+\section{Problem specification}
+
+\par This section presents the specification of the problem, by analyzing the input and output features, as well as pre and post conditions applied to them.
+
+\subsection{Input Data}
+
+\par The input data consists of $100,000$ patient profiles with features based on demographics, lifestyle habits, family history, and clinical measurements that are well-established indicators of diabetes risk. The data is generated using statistical distributions from real-world medical research, ensuring \textit{privacy preservation} while reflecting realistic health patterns.
+
+\par Table~\ref{table-input-data} presents a description of all input features used in this problem. This table showcases the name of the feature, the type of the feature, a brief description, and the domain (\textit{value range}) of the presented feature. As confirmed by the creators of this \href{https://www.kaggle.com/datasets/mohankrishnathalla/diabetes-health-indicators-dataset}{dataset}, all values fall within realistic medical ranges, matching realistic population health patterns, being a viable option when exploring lifestyle and clinical health patterns.
+
+\begin{table}[H]
+	\centering
+	\small
+	\begin{tabular}{|l|l|p{5cm}|p{4cm}|}
+		\hline
+		\textbf{Feature} & \textbf{Type} & \textbf{Description} & \textbf{Domain} \\
+		\hline
+		patient\_id & Integer & Unique patient identifier & $\mathbb{N} \cap [1, 100000]$ \\
+		\hline
+		age & Integer & Age of patient in years & $\mathbb{N} \cap [18, 90]$ \\
+		\hline
+		gender & Categorical & Patient gender & \{Male, Female, Other\} \\
+		\hline
+		ethnicity & Categorical & Ethnic background & \{White, Hispanic, Black, Asian, Other\} \\
+		\hline
+		education\_level & Categorical & Highest completed education & \{No formal, Highschool, Graduate, Postgraduate\} \\
+		\hline
+		income\_level & Categorical & Income category & \{Low, Medium, High\} \\
+		\hline
+		employment\_status & Categorical & Employment type & \{Employed, Unemployed, Retired, Student\} \\
+		\hline
+		smoking\_status & Categorical & Smoking behavior & \{Never, Former, Current\} \\
+		\hline
+		alcohol\_consumption\_per\_week & Float & Drinks consumed per week & $\mathbb{R_+} \cap [0, 30]$ \\
+		\hline
+		physical\_activity\_minutes\_per\_week & Integer & Physical activity (weekly minutes) & $\mathbb{N} \cap [1, 100000]$ \\
+		\hline
+		diet\_score & Integer & Diet quality (higher = healthier) & $\mathbb{N} \cap [1, 10]$ \\
+		\hline
+		sleep\_hours\_per\_day & Float & Average daily sleep hours & $\mathbb{R_+} \cap [3, 12]$ \\
+		\hline
+		screen\_time\_hours\_per\_day & Float & Average daily screen time hours & $\mathbb{R_+} \cap [0, 12]$ \\
+		\hline
+		family\_history\_diabetes & Integer & Family history of diabetes & $\mathbb{N} \cap \{0, 1\}$ \\
+		\hline
+		hypertension\_history & Integer & Hypertension history & $\mathbb{N} \cap \{0, 1\}$ \\
+		\hline
+		cardiovascular\_history & Integer & Cardiovascular history & $\mathbb{N} \cap \{0, 1\}$ \\
+		\hline
+		bmi & Float & Body Mass Index ($kg/m^2$) & $\mathbb{R_+} \cap [15, 45]$ \\
+		\hline
+		waist\_to\_hip\_ratio & Float & Waist-to-hip ratio & $\mathbb{R_+} \cap [0.7, 1.2]$ \\
+		\hline
+		systolic\_bp & Integer & Systolic blood pressure ($mmHg$) & $\mathbb{N} \cap [90, 180]$ \\
+		\hline
+		diastolic\_bp & Integer & Diastolic blood pressure ($mmHg$) & $\mathbb{N} \cap [60, 120]$ \\
+		\hline
+		heart\_rate & Integer & Resting heart rate ($bpm$) & $\mathbb{N} \cap [50, 120]$ \\
+		\hline
+		cholesterol\_total & Float & Total cholesterol ($mg/dL$) & $\mathbb{R_+} \cap [120, 30]$ \\
+		\hline
+		hdl\_cholesterol & Float & HDL cholesterol ($mg/dL$) & $\mathbb{R_+} \cap [20, 100]$ \\
+		\hline
+		ldl\_cholesterol & Float & LDL cholesterol ($mg/dL$) & $\mathbb{R_+} \cap [50, 200]$ \\
+		\hline
+		triglycerides & Float & Triglycerides ($mg/dL$) & $\mathbb{R_+} \cap [50, 500]$ \\
+		\hline
+		glucose\_fasting & Float & Fasting glucose ($mg/dL$) & $\mathbb{R_+} \cap [70, 250]$ \\
+		\hline
+		glucose\_postprandial & Float & Post-meal glucose ($mg/dL$) & $\mathbb{R_+} \cap [90, 350]$ \\
+		\hline
+		insulin\_level & Float & Blood insulin level ($\mu U/mL$) & $\mathbb{R_+} \cap [2, 50]$ \\
+		\hline
+		hba1c & Float & HbA1c (\%) & $\mathbb{R_+} \cap [4, 14]$ \\
+		\hline
+	\end{tabular}
+	
+	\caption{Input data description}
+	\label{table-input-data}
+\end{table}
+
+\subsection{Output Data}
+
+\par This problem proposes to solve the issue of predicting the diabetes risk score, based on social \& health indicators. The \textit{diabetes risk score} is a computed integer value based on the proposed social \& health indicators, ranging between $[0, 100]$. Based on the proposed features, the solution will provide a \textit{diabetes risk score} within the same range, indicating if a patient has a risk to diabetes or not.
+
+\section{Learning Task}
+
+\par This section presents the formalization of the learning task regarding the presented problem, accounting the features proposed to solve the problem and the goal provided by the solution. The specification of the learning task is presented below:
+
+\begin{itemize}
+	\item \textbf{Task}: prediction of the diabetes risk score;
+	\item \textbf{Performance}: quality of the resulted prediction, represented by how accurate is the prediction with respect to the real value;
+	\item \textbf{Experience}: prediction of the diabetes risk score on a large set of labeled instances;
+\end{itemize}
+
+\par The above described task will be solved through an empirical analysis, driven by data patterns rather than explicit programming.
+
+%TC:ignore
+% \keywords{federative learning, machine learning, privacy, security, trust, ethics}
+%TC:endignore
+
+%\nocite{*}
+%\bibliographystyle{alpha}
+%\bibliography{references}
+
+\end{document}
