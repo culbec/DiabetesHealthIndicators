@@ -1,0 +1,13 @@
+{
+    "DiabetesHealthIndicators": {
+        "loader": {
+            "dataset_path": "./.datasets/diabetes_health_indicators/diabetes_dataset.csv",
+            "separator": ",",
+            "decimal": ".",
+            "label_columns": [
+                "diabetes_stage",
+                "diagnosed_diabetes"
+            ]
+        }
+    }
+}
