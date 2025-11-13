@@ -8,6 +8,75 @@
                 "diabetes_stage",
                 "diagnosed_diabetes"
             ]
+        },
+        "preprocessor": {
+            "numerical_features": {
+                "scaler": {
+                    "type": "standard_scaler",
+                    "params": {}
+                },
+                "features": [
+                    "age",
+                    "alcohol_consumption_per_week",
+                    "physical_activity_minutes_per_week",
+                    "diet_score",
+                    "sleep_hours_per_day",
+                    "screen_time_hours_per_day",
+                    "bmi",
+                    "waist_to_hip_ratio",
+                    "systolic_bp",
+                    "diastolic_bp",
+                    "heart_rate",
+                    "cholesterol_total",
+                    "hdl_cholesterol",
+                    "ldl_cholesterol",
+                    "triglycerides",
+                    "glucose_fasting",
+                    "glucose_postprandial",
+                    "insulin_level",
+                    "hba1c",
+                    "diabetes_risk_score"
+                ]
+            },
+            "categorical_features": {
+                "encoder": {
+                    "type": "label_encoder",
+                    "params": {}
+                },
+                "features": [
+                    "gender",
+                    "ethnicity",
+                    "education_level",
+                    "income_level",
+                    "family_history_diabetes",
+                    "hypertension_history",
+                    "cardiovascular_history",
+                    "employment_status",
+                    "smoking_status",
+                    "diabetes_stage",
+                    "diagnosed_diabetes"
+                ]
+            },
+            "nan_category": "Unknown",
+            "dry_run": false,
+            "numerical_to_categorical_features": {
+                "family_history_diabetes": {
+                    "0": "No",
+                    "1": "Yes"
+                },
+                "hypertension_history": {
+                    "0": "No",
+                    "1": "Yes"
+                },
+                "cardiovascular_history": {
+                    "0": "No",
+                    "1": "Yes"
+                },
+                "diagnosed_diabetes": {
+                    "0": "No",
+                    "1": "Yes"
+                }
+            }
         }
     }
 }

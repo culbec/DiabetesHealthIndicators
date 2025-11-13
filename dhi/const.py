@@ -49,3 +49,20 @@ DHI_NUMPY_FLOAT_RANGES: list[tuple[np.floating, np.floating, type]] = [
     (np.finfo(np.float32).min, np.finfo(np.float32).max, np.float32),
     (np.finfo(np.float64).min, np.finfo(np.float64).max, np.float64),
 ]
+
+##############################
+# PLOT CONSTANTS
+##############################
+
+DHI_PLOT_COLOR_CONTINUOUS_SCALE: str = "RdBu"
+DHI_PLOT_WIDTH: int = 1280
+DHI_PLOT_HEIGHT: int = 720
+
+DHI_PLOT_HISTOGRAM_DEFAULT_BINS: int = 10
+DHI_PLOT_HISTOGRAM_MARKER: dict = dict(line=dict(width=0.8, color="black"))
+DHI_PLOT_HISTOGRAM_WIDTH: int = 800
+DHI_PLOT_HISTOGRAM_HEIGHT: int = 600
+
+DHI_PLOT_DISTPLOT_KDE_LINE: dict = dict(color="red", width=2)
+
+DHI_PLOT_SUBPLOT_COLS_PER_ROW: int = 3

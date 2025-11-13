@@ -1,14 +1,68 @@
+import logging
 import pathlib
-
-import pandas as pd
-import numpy as np
-
-import dhi.const as dconst
-
 from typing import Any
 
-from dhi.utils import get_logger, get_filetype
+import numpy as np
+import pandas as pd
+
+import dhi.const as dconst
 from dhi.decorators import time_func
+from dhi.utils import get_filetype, get_logger
+
+
+@time_func
+def reduce_memory_usage(
+    df: pd.DataFrame, logger: logging.Logger = None, memory_usage_unit: str = "MB"
+) -> pd.DataFrame:
+    """
+    Reduces the memory usage of a pandas DataFrame
+    by downcasting numerical columns to more efficient types.
+
+    :param pd.DataFrame df: The DataFrame to optimize
+    :param logging.Logger logger: The logger to use for logging, defaults to None
+    :param str memory_usage_unit: The unit for logging memory usage, defaults to "MB"
+    :return pd.DataFrame: The optimized DataFrame with reduced memory usage
+    """
+    reporter_info = logger.info if logger else print
+    reporter_debug = logger.debug if logger else print
+    reporter_warning = logger.warning if logger else print
+
+    memory_usage_unit = memory_usage_unit.upper()
+    if memory_usage_unit not in dconst.DHI_SIZES_BYTES:
+        memory_usage_unit = dconst.DHI_DEFAULT_SIZE_UNIT
+    munit = dconst.DHI_SIZES_BYTES[memory_usage_unit]
+
+    start_mem = df.memory_usage().sum() / munit
+    reporter_info(f"Initial memory usage of dataframe is {start_mem:.2f} {memory_usage_unit}")
+
+    df_optimized = df.copy()
+
+    for col in df_optimized.columns:
+        if pd.api.types.is_numeric_dtype(df_optimized[col]):
+            col_min = df_optimized[col].min()
+            col_max = df_optimized[col].max()
+
+            if pd.api.types.is_integer_dtype(df_optimized[col]):
+                for min_val, max_val, dtype in dconst.DHI_NUMPY_INT_RANGES:
+                    if col_min >= min_val and col_max <= max_val:
+                        df_optimized[col] = df_optimized[col].astype(dtype)
+                        reporter_debug(f"Column '{col}' downcasted to {dtype}")
+                        break
+            else:
+                for min_val, max_val, dtype in dconst.DHI_NUMPY_FLOAT_RANGES:
+                    if col_min >= min_val and col_max <= max_val:
+                        df_optimized[col] = df_optimized[col].astype(dtype)
+                        reporter_debug(f"Column '{col}' downcasted to {dtype}")
+                        break
+        else:
+            # TODO: research how to optimize non-numeric columns (e.g. categories)
+            reporter_warning(f"Column '{col}' is not numeric and was not downcasted")
+
+    end_mem = df_optimized.memory_usage().sum() / munit
+    reporter_info(f"Final memory usage of dataframe is {end_mem:.2f} {memory_usage_unit}")
+    reporter_info(f"Decreased memory usage by {(start_mem - end_mem) / start_mem * 100:.2f}%")
+
+    return df_optimized
 
 
 class Loader(object):
@@ -97,53 +151,6 @@ class Loader(object):
         else:
             raise TypeError("label_columns must be a string or a list of strings")
 
-    @time_func
-    def _reduce_memory_usage(self, df: pd.DataFrame, memory_usage_unit: str = "MB") -> pd.DataFrame:
-        """
-        Reduces the memory usage of a pandas DataFrame
-        by downcasting numerical columns to more efficient types.
-
-        :param pd.DataFrame df: The DataFrame to optimize
-        :param str memory_usage_unit: The unit for logging memory usage, defaults to "MB"
-        :return pd.DataFrame: The optimized DataFrame with reduced memory usage
-        """
-        memory_usage_unit = memory_usage_unit.upper()
-        if memory_usage_unit not in dconst.DHI_SIZES_BYTES:
-            memory_usage_unit = dconst.DHI_DEFAULT_SIZE_UNIT
-        munit = dconst.DHI_SIZES_BYTES[memory_usage_unit]
-
-        start_mem = df.memory_usage().sum() / munit
-        self.logger.info(f"Initial memory usage of dataframe is {start_mem:.2f} {memory_usage_unit}")
-
-        df_optimized = df.copy()
-
-        for col in df_optimized.columns:
-            if pd.api.types.is_numeric_dtype(df_optimized[col]):
-                col_min = df_optimized[col].min()
-                col_max = df_optimized[col].max()
-
-                if pd.api.types.is_integer_dtype(df_optimized[col]):
-                    for min_val, max_val, dtype in dconst.DHI_NUMPY_INT_RANGES:
-                        if col_min >= min_val and col_max <= max_val:
-                            df_optimized[col] = df_optimized[col].astype(dtype)
-                            self.logger.debug(f"Column '{col}' downcasted to {dtype}")
-                            break
-                else:
-                    for min_val, max_val, dtype in dconst.DHI_NUMPY_FLOAT_RANGES:
-                        if col_min >= min_val and col_max <= max_val:
-                            df_optimized[col] = df_optimized[col].astype(dtype)
-                            self.logger.debug(f"Column '{col}' downcasted to {dtype}")
-                            break
-            else:
-                # TODO: research how to optimize non-numeric columns (e.g. categories)
-                self.logger.warning(f"Column '{col}' is not numeric and was not downcasted")
-
-        end_mem = df_optimized.memory_usage().sum() / munit
-        self.logger.info(f"Final memory usage of dataframe is {end_mem:.2f} {memory_usage_unit}")
-        self.logger.info(f"Decreased memory usage by {(start_mem - end_mem) / start_mem * 100:.2f}%")
-
-        return df_optimized
-
     def _load_dataset(self) -> pd.DataFrame:
         """
         Internal method used to load the dataset from its path,
@@ -170,7 +177,10 @@ class Loader(object):
                     )
                 case "excel":
                     df = pd.read_excel(
-                        self.dataset_path, sheet_name=None, na_values=self.missing_markers, decimal=self.decimal
+                        self.dataset_path,
+                        sheet_name=None,
+                        na_values=self.missing_markers,
+                        decimal=self.decimal,
                     )
                     # Combining all sheets into a single DataFrame
                     df = pd.concat(df.values(), ignore_index=True)
@@ -228,6 +238,6 @@ class Loader(object):
 
         if self.reduce_memory_usage:
             self.logger.info("Reducing memory usage of the dataset")
-            df = self._reduce_memory_usage(df)
+            df = reduce_memory_usage(df, logger=self.logger)
 
         return df

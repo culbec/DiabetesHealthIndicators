@@ -9,12 +9,13 @@ def time_func(func, num_decimals: int = 8):
 
         # Automatically use self.logger.info if available
         self_ = args[0] if args else None
-        if self_ and hasattr(self_, "logger") and hasattr(self_.logger, "info"):
-            self_.logger.info(f"Function '{func.__name__}' executed in {elapsed:.{num_decimals}f} seconds.")
+        if self_ is not None and hasattr(self_, "logger") and hasattr(self_.logger, "info"):
+            reporter = self_.logger.info
         elif kwargs.get("logger") and hasattr(kwargs["logger"], "info"):
-            kwargs["logger"].info(f"Function '{func.__name__}' executed in {elapsed:.{num_decimals}f} seconds.")
+            reporter = kwargs["logger"].info
         else:
-            print(f"Function '{func.__name__}' executed in {elapsed:.{num_decimals}f} seconds.")
+            reporter = print
+        reporter(f"Function '{func.__name__}' executed in {elapsed:.{num_decimals}f} seconds.")
         return result
 
     return wrapper
