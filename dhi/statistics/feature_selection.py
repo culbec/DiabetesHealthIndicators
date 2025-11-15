@@ -139,7 +139,7 @@ def variance_threshold_feature_selection(
     label_columns: list[str],
     target_column: str,
     threshold: float = dstatconst.DHI_FEATURE_SELECTION_DEFAULT_VARIANCE_THRESHOLD,
-) -> None:
+) -> np.ndarray:
     """
     Performs a variance threshold feature selection on the dataframe.
 
@@ -147,10 +147,11 @@ def variance_threshold_feature_selection(
     :param list[str] label_columns: The columns to remove from the dataframe
     :param str target_column: The column to perform the variance threshold feature selection on
     :param float threshold: The threshold to perform the variance threshold feature selection on, defaults to dstatconst.DHI_FEATURE_SELECTION_DEFAULT_VARIANCE_THRESHOLD
+    :return np.ndarray: The selected features
     """
     if df.empty:
         logger.warning("The dataframe is empty, skipping variance threshold feature selection")
-        return
+        return np.array([])
 
     label_columns = list(set(label_columns) - {target_column})
     df = df.drop(columns=label_columns)
@@ -158,23 +159,25 @@ def variance_threshold_feature_selection(
     numerical_columns = df.select_dtypes(include=["number"]).columns.tolist()
     if not numerical_columns:
         logger.warning("No numerical columns found, skipping variance threshold feature selection")
-        return
+        return np.array([])
     if not target_column in numerical_columns:
         logger.warning("Target column is not a numerical column, skipping variance threshold feature selection")
-        return
+        return np.array([])
 
     x = df[numerical_columns].drop(columns=[target_column])
 
     selector = skfs.VarianceThreshold(threshold=threshold)
-    x_new = selector.fit_transform(x)
+    selector.fit(x)
+
+    high_var_indices = selector.get_support(indices=True)
 
     # Calculate variances before and after filtering
-    variances_original = np.var(x.values, axis=0)
-    variances_filtered = np.var(x_new, axis=0)
+    variances_original = np.var(np.asarray(x.values), axis=0)
+    variances_filtered = np.var(np.asarray(x.values)[high_var_indices], axis=0)
 
     # Get feature names for original and filtered features
     original_features = list(x.columns)
-    selected_features = selector.get_feature_names_out(x.columns)
+    selected_features = [original_features[i] for i in high_var_indices] if high_var_indices is not None else original_features
 
     # Create bar plot visualization
     fig = go.Figure()
@@ -213,6 +216,8 @@ def variance_threshold_feature_selection(
 
     fig.show()
     logger.info("Plotting of variance threshold feature selection completed successfully")
+    
+    return np.array(x.iloc[:, high_var_indices])
 
 
 def univariate_feature_selection(
