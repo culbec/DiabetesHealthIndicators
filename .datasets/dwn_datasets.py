@@ -12,26 +12,26 @@ def download_datasets() -> list[tuple[pathlib.Path, Exception]]:
 
     with open(DATASETS_FILE, "r") as f:
         asset_datasets = json.load(f)
-        
+
     assert isinstance(asset_datasets, list), "Datasets must be a list"
 
     for dataset in asset_datasets:
         dataset_name = dataset.get("name")
         dataset_info = dataset.get("info")
-        
+
         print(f"Downloading dataset {dataset_name}...")
-        
+
         url = dataset_info.get("url")
         save_path = dataset_info.get("save_path")
-        
+
         if not url:
             print(f"Dataset {dataset_name} has no URL. Skipping download.")
             continue
-        
+
         if not save_path:
             save_path = f"{dataset_name}.zip"
         save_path = ROOT_DIR / save_path
-        
+
         print(f"Downloading dataset from {url} and saving to {save_path}...")
 
         try:
@@ -51,7 +51,7 @@ def unzip_dataset(dataset: pathlib.Path) -> None:
     if not zipfile.is_zipfile(dataset):
         print(f"Dataset {dataset} is not a zip file. Skipping unzip.")
         return
-    
+
     with zipfile.ZipFile(dataset, "r") as zip_ref:
         fpath = dataset.parent / dataset.stem
         fpath.mkdir(exist_ok=True)
