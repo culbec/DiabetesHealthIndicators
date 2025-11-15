@@ -11,12 +11,12 @@ from dhi.utils import get_logger
 logger = get_logger(__name__)
 
 
-def plot2d(x: np.array, y: np.array, title: str = "2D Plot", hover_data: dict = {}) -> None:
+def plot2d(x: np.ndarray, y: np.ndarray, title: str = "2D Plot", hover_data: dict = {}) -> None:
     """
     Plots the 2D plot of the dataframe.
 
-    :param np.array x: The array to plot the 2D plot of
-    :param np.array y: The array to plot the 2D plot of
+    :param np.ndarray x: The array to plot the 2D plot of
+    :param np.ndarray y: The array to plot the 2D plot of
     :param str title: The title of the 2D plot, defaults to "2D Plot"
     :param dict hover_data: The data to display on hover, defaults to {}
     """
@@ -38,13 +38,13 @@ def plot2d(x: np.array, y: np.array, title: str = "2D Plot", hover_data: dict = 
     logger.info("Plotting of 2D plot completed successfully")
 
 
-def plot3d(x: np.array, y: np.array, z: np.array, title: str = "3D Plot", hover_data: dict = {}) -> None:
+def plot3d(x: np.ndarray, y: np.ndarray, z: np.ndarray, title: str = "3D Plot", hover_data: dict = {}) -> None:
     """
     Plots the 3D plot of the dataframe.
 
-    :param np.array x: The array to plot the 3D plot of
-    :param np.array y: The array to plot the 3D plot of
-    :param np.array z: The array to plot the 3D plot of
+    :param np.ndarray x: The array to plot the 3D plot of
+    :param np.ndarray y: The array to plot the 3D plot of
+    :param np.ndarray z: The array to plot the 3D plot of
     :param str title: The title of the 3D plot, defaults to "3D Plot"
     :param dict hover_data: The data to display on hover, defaults to {}
     """
