@@ -24,12 +24,12 @@ def plot2d(x: np.ndarray, y: np.ndarray, title: str = "2D Plot", hover_data: dic
         logger.warning("The arrays have different lengths, skipping 2D plot")
         return
 
-    logger.info(f"Plotting 2D plot for {x.columns} with title: {title}")
+    logger.info(f"Plotting 2D plot for {x.shape} with title: {title}")
     fig = px.scatter(
         x,
         y,
         title=title,
-        color_discrete_sequence=dconst.DHI_PLOT_COLOR_DISCRETE_SEQUENCE,
+        color_continuous_scale=dconst.DHI_PLOT_COLOR_CONTINUOUS_SCALE,
         width=dconst.DHI_PLOT_WIDTH,
         height=dconst.DHI_PLOT_HEIGHT,
         hover_data=hover_data,
@@ -52,13 +52,13 @@ def plot3d(x: np.ndarray, y: np.ndarray, z: np.ndarray, title: str = "3D Plot", 
         logger.warning("The arrays have different lengths, skipping 3D plot")
         return
 
-    logger.info(f"Plotting 3D plot for {x.columns} with title: {title}")
+    logger.info(f"Plotting 3D plot for {x.shape} with title: {title}")
     fig = px.scatter_3d(
         x,
         y,
         z,
         title=title,
-        color_discrete_sequence=dconst.DHI_PLOT_COLOR_DISCRETE_SEQUENCE,
+        color_continuous_scale=dconst.DHI_PLOT_COLOR_CONTINUOUS_SCALE,
         width=dconst.DHI_PLOT_WIDTH,
         height=dconst.DHI_PLOT_HEIGHT,
         hover_data=hover_data,
