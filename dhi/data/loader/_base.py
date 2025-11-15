@@ -12,14 +12,14 @@ from dhi.utils import get_filetype, get_logger
 
 @time_func
 def reduce_memory_usage(
-    df: pd.DataFrame, logger: logging.Logger = None, memory_usage_unit: str = "MB"
+    df: pd.DataFrame, logger: logging.Logger | None = None, memory_usage_unit: str = "MB"
 ) -> pd.DataFrame:
     """
     Reduces the memory usage of a pandas DataFrame
     by downcasting numerical columns to more efficient types.
 
     :param pd.DataFrame df: The DataFrame to optimize
-    :param logging.Logger logger: The logger to use for logging, defaults to None
+    :param logging.Logger | None logger: The logger to use for logging, defaults to None
     :param str memory_usage_unit: The unit for logging memory usage, defaults to "MB"
     :return pd.DataFrame: The optimized DataFrame with reduced memory usage
     """

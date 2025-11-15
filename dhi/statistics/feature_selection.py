@@ -1,4 +1,4 @@
-from typing import Any
+from typing import Any, Literal
 
 import numpy as np
 import pandas as pd
@@ -87,8 +87,8 @@ def chi2_independence_test(
         logger.warning("The dataframe is empty, skipping chi2 independence test")
         return
 
-    label_columns = set(label_columns) - {target_column}
-    df = df.drop(columns=list(label_columns))
+    label_columns = list(set(label_columns) - {target_column})
+    df = df.drop(columns=label_columns)
 
     numerical_columns = df.select_dtypes(include=["number"]).columns.tolist()
     if not numerical_columns:
@@ -152,8 +152,8 @@ def variance_threshold_feature_selection(
         logger.warning("The dataframe is empty, skipping variance threshold feature selection")
         return
 
-    label_columns = set(label_columns) - {target_column}
-    df = df.drop(columns=list(label_columns))
+    label_columns = list(set(label_columns) - {target_column})
+    df = df.drop(columns=label_columns)
 
     numerical_columns = df.select_dtypes(include=["number"]).columns.tolist()
     if not numerical_columns:
@@ -238,8 +238,8 @@ def univariate_feature_selection(
         logger.warning("The dataframe is empty, skipping univariate feature selection")
         return
 
-    label_columns = set(label_columns) - {target_column}
-    df = df.drop(columns=list(label_columns))
+    label_columns = list(set(label_columns) - {target_column})
+    df = df.drop(columns=label_columns)
 
     numerical_columns = df.select_dtypes(include=["number"]).columns.tolist()
     if not numerical_columns:
@@ -258,14 +258,14 @@ def univariate_feature_selection(
 
     params = dstatconst.DHI_FEATURE_SELECTION_MODES[mode] if not params else params
 
-    selector = skfs.GenericUnivariateSelect(score_func=skfs.f_classif, mode=mode)
+    selector = skfs.GenericUnivariateSelect(score_func=skfs.f_classif, mode=mode) # pyright: ignore[reportArgumentType]
     selector.set_params(**params)
 
     selector.fit(x, y)
 
     # Handle zero p-values to avoid log10(0) = -inf
     # Replace zero p-values with a very small value (machine epsilon)
-    pvalues = selector.pvalues_.copy()
+    pvalues = np.asarray(selector.pvalues_).copy()
     pvalues[pvalues == 0] = np.finfo(float).eps
 
     scores = -np.log10(pvalues)
@@ -323,15 +323,15 @@ def model_feature_selection(
     """
     if not prefit:
         logger.warning("Classifier is not fitted, fitting it")
-        clf.fit(x, y)
+        clf.fit(x, y) # pyright: ignore[reportAttributeAccessIssue]
         prefit = True
 
     selector = skfs.SelectFromModel(clf, prefit=prefit)
     x_new = selector.transform(x)
 
-    logger.info(f"Selected {len(x_new.columns)} features out of {len(x.columns)} features")
+    logger.info(f"Selected {x_new.shape} features out of {len(x.columns)} features")
 
-    return pd.DataFrame(x_new, columns=selector.get_feature_names_out()), selector
+    return pd.DataFrame(np.asarray(x_new), columns=selector.get_feature_names_out()), selector
 
 
 def relief_feature_selection(
@@ -339,7 +339,7 @@ def relief_feature_selection(
     label_columns: list[str],
     target_column: str,
     n_features: int = dstatconst.DHI_FEATURE_SELECTION_DEFAULT_RELIEF_N_FEATURES,
-) -> skrebate.ReliefF:
+) -> None:
     """
     Performs a relief feature selection on the dataframe.
 
@@ -353,8 +353,8 @@ def relief_feature_selection(
         logger.warning("The dataframe is empty, skipping relief feature selection")
         return
 
-    label_columns = set(label_columns) - {target_column}
-    df = df.drop(columns=list(label_columns))
+    label_columns = list(set(label_columns) - {target_column})
+    df = df.drop(columns=label_columns)
 
     numerical_columns = df.select_dtypes(include=["number"]).columns.tolist()
     if not numerical_columns:
@@ -372,12 +372,12 @@ def relief_feature_selection(
     y = df[target_column]
 
     x_array = x.values.astype(np.float64)
-    y_array = y.values
+    y_array = np.asarray(y.values)
 
     if not np.issubdtype(y_array.dtype, np.integer):
         logger.info("Converting target variable to integer labels for ReliefF")
         le = LabelEncoder()
-        y_array = le.fit_transform(y_array)
+        y_array = np.asarray(le.fit_transform(y_array))
 
     logger.info(f"Performing ReliefF feature selection x={x_array.shape} and y={y_array.shape}")
     selector = skrebate.ReliefF(n_features_to_select=n_features, n_jobs=-1)
@@ -385,4 +385,3 @@ def relief_feature_selection(
 
     logger.info(f"Selected {n_features} features out of {len(feature_names)} features")
     logger.info(f"Selected features: {selector.top_features_}")
-    return selector

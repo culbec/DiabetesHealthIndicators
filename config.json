@@ -12,7 +12,7 @@
         "preprocessor": {
             "numerical_features": {
                 "scaler": {
-                    "type": "standard_scaler",
+                    "type": "robust_scaler",
                     "params": {}
                 },
                 "features": [

@@ -1,5 +1,4 @@
 import pandas as pd
-import sklearn.preprocessing as skp
 
 import dhi.data.preprocessor.const as dppconst
 from dhi.data.loader._base import reduce_memory_usage
@@ -188,8 +187,8 @@ class Preprocessor(object):
         df_numerical_transformed = df.copy()
 
         for feature_to_transform in features_to_transform:
-            scaler_instance = dppconst.DHI_PREPROCESSOR_NUMERICAL_SCALERS[scaler_type](**scaler_params)
-            fitted_scaler_instance = scaler_instance.fit(
+            scaler_instance = dppconst.DHI_PREPROCESSOR_NUMERICAL_SCALERS[scaler_type](**scaler_params) # pyright: ignore[reportCallIssue]
+            fitted_scaler_instance = scaler_instance.fit( # pyright: ignore[reportAttributeAccessIssue]
                 df_numerical_transformed[feature_to_transform].values.reshape(-1, 1)
             )
             df_numerical_transformed[feature_to_transform] = fitted_scaler_instance.transform(
@@ -267,8 +266,8 @@ class Preprocessor(object):
         df_categorical_encoded = df.copy()
 
         for feature_to_encode in features_to_encode:
-            encoder_instance = dppconst.DHI_PREPROCESSOR_CATEGORICAL_ENCODERS[encoder_type](**encoder_params)
-            fitted_encoder_instance = encoder_instance.fit(df_categorical_encoded[feature_to_encode].values)
+            encoder_instance = dppconst.DHI_PREPROCESSOR_CATEGORICAL_ENCODERS[encoder_type](**encoder_params) # pyright: ignore[reportCallIssue]
+            fitted_encoder_instance = encoder_instance.fit(df_categorical_encoded[feature_to_encode].values) # pyright: ignore[reportAttributeAccessIssue]
             df_categorical_encoded[feature_to_encode] = fitted_encoder_instance.transform(
                 df_categorical_encoded[feature_to_encode].values
             )
@@ -289,7 +288,7 @@ class Preprocessor(object):
         """
         if not features:
             self.logger.warning("No features provided, inverse transforming all features")
-            features = self.numerical_scaling_data.keys() | self.categorical_encoding_data.keys()
+            features = list(self.numerical_scaling_data.keys() | self.categorical_encoding_data.keys())
         elif isinstance(features, str):
             features = [features]
         elif isinstance(features, list) and all(isinstance(feature, str) for feature in features):

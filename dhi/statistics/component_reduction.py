@@ -1,11 +1,8 @@
 import pandas as pd
-import plotly.express as px
-import plotly.figure_factory as ff
-import plotly.graph_objects as go
-import umap
-from plotly.subplots import make_subplots
+import numpy as np
 from sklearn.decomposition import PCA
 from sklearn.manifold import TSNE
+from umap import UMAP
 
 import dhi.statistics.const as dstatconst
 from dhi.data.visualizer.visualizer import plot2d, plot3d
@@ -45,7 +42,7 @@ def _component_reduction(df: pd.DataFrame, n_components: int, title: str, method
             reduced_data = tsne.fit_transform(data_for_reduction)
 
         case "umap":
-            umap = umap.UMAP(n_components=n_components)
+            umap = UMAP(n_components=n_components)
 
             logger.info(f"Fitting component reduction model with {data_for_reduction.columns} columns")
 
@@ -53,6 +50,12 @@ def _component_reduction(df: pd.DataFrame, n_components: int, title: str, method
         case _:
             logger.warning(f"Unsupported method: {method}, skipping component reduction")
             return
+
+    if reduced_data is None or not hasattr(reduced_data, "shape"):
+        logger.warning("Component reduction failed, skipping plot")
+        return
+
+    reduced_data = np.asarray(reduced_data)
 
     logger.info(f"Reduced data has {reduced_data.shape[1]} components using '{method}' method")
 

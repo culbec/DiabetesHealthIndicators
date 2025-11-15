@@ -1,11 +1,11 @@
 import sklearn.preprocessing as skp
 from sklearn.base import BaseEstimator
+from typing import Type
 
 ##############################
 # PREPROCESSOR CONSTANTS
 ##############################
-
-DHI_PREPROCESSOR_NUMERICAL_SCALERS: dict[str, BaseEstimator] = {
+DHI_PREPROCESSOR_NUMERICAL_SCALERS: dict[str, Type[BaseEstimator]] = {
     "standard_scaler": skp.StandardScaler,
     "min_max_scaler": skp.MinMaxScaler,
     "max_abs_scaler": skp.MaxAbsScaler,
@@ -13,8 +13,7 @@ DHI_PREPROCESSOR_NUMERICAL_SCALERS: dict[str, BaseEstimator] = {
     "power_transformer": skp.PowerTransformer,
     "quantile_transformer": skp.QuantileTransformer,
 }
-
-DHI_PREPROCESSOR_CATEGORICAL_ENCODERS: dict[str, BaseEstimator] = {
+DHI_PREPROCESSOR_CATEGORICAL_ENCODERS: dict[str, Type[BaseEstimator]] = {
     "label_encoder": skp.LabelEncoder,
     "one_hot_encoder": skp.OneHotEncoder,
     "label_binarizer": skp.LabelBinarizer,
