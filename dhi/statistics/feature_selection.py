@@ -3,6 +3,7 @@ from typing import Any
 import numpy as np
 import pandas as pd
 import plotly.express as px
+import plotly.graph_objects as go
 import sklearn.feature_selection as skfs
 import skrebate
 from sklearn.base import BaseEstimator
@@ -133,13 +134,94 @@ def chi2_independence_test(
     logger.info("Plotting of chi2 independence test completed successfully")
 
 
+def variance_threshold_feature_selection(
+    df: pd.DataFrame,
+    label_columns: list[str],
+    target_column: str,
+    threshold: float = dstatconst.DHI_FEATURE_SELECTION_DEFAULT_VARIANCE_THRESHOLD,
+) -> None:
+    """
+    Performs a variance threshold feature selection on the dataframe.
+
+    :param pd.DataFrame df: The dataframe to perform the variance threshold feature selection on
+    :param list[str] label_columns: The columns to remove from the dataframe
+    :param str target_column: The column to perform the variance threshold feature selection on
+    :param float threshold: The threshold to perform the variance threshold feature selection on, defaults to dstatconst.DHI_FEATURE_SELECTION_DEFAULT_VARIANCE_THRESHOLD
+    """
+    if df.empty:
+        logger.warning("The dataframe is empty, skipping variance threshold feature selection")
+        return
+
+    label_columns = set(label_columns) - {target_column}
+    df = df.drop(columns=list(label_columns))
+
+    numerical_columns = df.select_dtypes(include=["number"]).columns.tolist()
+    if not numerical_columns:
+        logger.warning("No numerical columns found, skipping variance threshold feature selection")
+        return
+    if not target_column in numerical_columns:
+        logger.warning("Target column is not a numerical column, skipping variance threshold feature selection")
+        return
+
+    x = df[numerical_columns].drop(columns=[target_column])
+
+    selector = skfs.VarianceThreshold(threshold=threshold)
+    x_new = selector.fit_transform(x)
+
+    # Calculate variances before and after filtering
+    variances_original = np.var(x.values, axis=0)
+    variances_filtered = np.var(x_new, axis=0)
+
+    # Get feature names for original and filtered features
+    original_features = list(x.columns)
+    selected_features = selector.get_feature_names_out(x.columns)
+
+    # Create bar plot visualization
+    fig = go.Figure()
+
+    # Add original variances bar
+    fig.add_trace(
+        go.Bar(
+            x=original_features,
+            y=variances_original,
+            name="Original",
+            marker_color="blue",
+            hovertemplate="Feature: %{x}<br>Variance: %{y:.4f}<extra></extra>",
+        )
+    )
+
+    # Add filtered variances bar (only for selected features)
+    fig.add_trace(
+        go.Bar(
+            x=selected_features,
+            y=variances_filtered,
+            name="Filtered",
+            marker_color="red",
+            hovertemplate="Feature: %{x}<br>Variance: %{y:.4f}<extra></extra>",
+        )
+    )
+
+    fig.update_layout(
+        title=f"Variance of Features before and after Filtering | Threshold: {threshold}",
+        xaxis_title="Feature",
+        yaxis_title="Variance",
+        width=dconst.DHI_PLOT_WIDTH,
+        height=dconst.DHI_PLOT_HEIGHT,
+        legend=dict(title="Dataset"),
+        hovermode="closest",
+    )
+
+    fig.show()
+    logger.info("Plotting of variance threshold feature selection completed successfully")
+
+
 def univariate_feature_selection(
     df: pd.DataFrame,
     label_columns: list[str],
     target_column: str,
     mode: str = "percentile",
     params: dict[str, Any] = {},
-) -> skfs.GenericUnivariateSelect:
+) -> None:
     """
     Performs a univariate feature selection on the dataframe.
 
@@ -151,7 +233,6 @@ def univariate_feature_selection(
     :param str mode: The mode to perform the univariate feature selection on, defaults to "percentile"
     :param dict[str, Any] params: The parameters to perform the univariate feature selection on, defaults to {}
     :param list[str] | None columns: The columns to perform the univariate feature selection on, defaults to None
-    :return skfs.GenericUnivariateSelect: The selector object
     """
     if df.empty:
         logger.warning("The dataframe is empty, skipping univariate feature selection")
@@ -224,9 +305,6 @@ def univariate_feature_selection(
     fig.show()
 
     logger.info("Plotting of univariate feature selection completed successfully")
-
-    return selector
-
 
 def model_feature_selection(
     clf: BaseEstimator,
