@@ -1,4 +1,4 @@
-from typing import Any, Literal
+from typing import Any
 
 import numpy as np
 import pandas as pd
@@ -102,20 +102,31 @@ def chi2_independence_test(
         logger.warning("Number of bins must be greater than 0, using default number of bins")
         n_bins = dstatconst.DHI_FEATURE_SELECTION_DEFAULT_KBINS_N_BINS
 
-    x = df[numerical_columns].drop(columns=[target_column])
-    feature_names = x.columns.tolist()
+    X = df[numerical_columns].drop(columns=[target_column])
+    assert isinstance(X, pd.DataFrame)
+    
+    y = df[target_column].astype(int)
+    
+    X_discrete = np.zeros_like(X.values)
+    
+    feature_names = X.columns.tolist()
 
-    if (x < 0).any().any():
-        logger.warning("Some features have negative values, discretizing them")
-        kbins = KBinsDiscretizer(n_bins=dstatconst.DHI_FEATURE_SELECTION_DEFAULT_KBINS_N_BINS)
-        x = kbins.fit_transform(x)
-    else:
-        x = x.values
+    # Discretize every feature independently
+    X_discrete = np.zeros_like(X.values)
 
-    y = df[target_column]
+    for i, col in enumerate(feature_names):
+        col_values = np.asarray(X[col].values)
+
+        # Ensure non-negative values
+        if np.min(col_values) < 0:
+            col_values = col_values - np.min(col_values)
+
+        # Discretize
+        kb = KBinsDiscretizer(n_bins=n_bins, encode="ordinal", strategy="uniform")
+        X_discrete[:, i] = kb.fit_transform(col_values.reshape(-1, 1)).ravel()
 
     logger.info(f"Performing chi2 independence test on {df.columns} out of {len(df.columns)} columns")
-    chi2_scores, p_values = skfs.chi2(x, y)
+    chi2_scores, p_values = skfs.chi2(X, y)
 
     logger.info(f"Chi2 scores: {chi2_scores}")
     logger.info(f"P values: {p_values}")
@@ -143,6 +154,8 @@ def variance_threshold_feature_selection(
     """
     Performs a variance threshold feature selection on the dataframe.
 
+    Selects only those features that have a variance greater than the threshold.
+
     :param pd.DataFrame df: The dataframe to perform the variance threshold feature selection on
     :param list[str] label_columns: The columns to remove from the dataframe
     :param str target_column: The column to perform the variance threshold feature selection on
@@ -164,19 +177,23 @@ def variance_threshold_feature_selection(
         logger.warning("Target column is not a numerical column, skipping variance threshold feature selection")
         return np.array([])
 
-    x = df[numerical_columns].drop(columns=[target_column])
+    X = df[numerical_columns].drop(columns=[target_column])
+    y = df[target_column]
 
     selector = skfs.VarianceThreshold(threshold=threshold)
-    selector.fit(x)
+    selector.fit(X, y)
 
     high_var_indices = selector.get_support(indices=True)
 
     # Calculate variances before and after filtering
-    variances_original = np.var(np.asarray(x.values), axis=0)
-    variances_filtered = np.var(np.asarray(x.values)[high_var_indices], axis=0)
+    variances_original = np.var(np.asarray(X.values), axis=0)
+    x_filtered = X.iloc[:, high_var_indices]
+
+    variances_filtered = np.var(x_filtered.values, axis=0)
+    logger.info(f"Variances of filtered features: {variances_filtered}")
 
     # Get feature names for original and filtered features
-    original_features = list(x.columns)
+    original_features = list(X.columns)
     selected_features = [original_features[i] for i in high_var_indices] if high_var_indices is not None else original_features
 
     # Create bar plot visualization
@@ -217,7 +234,7 @@ def variance_threshold_feature_selection(
     fig.show()
     logger.info("Plotting of variance threshold feature selection completed successfully")
     
-    return np.array(x.iloc[:, high_var_indices])
+    return np.array(x_filtered.columns)
 
 
 def univariate_feature_selection(
@@ -254,8 +271,21 @@ def univariate_feature_selection(
         logger.warning("Target column is not a numerical column, skipping univariate feature selection")
         return
 
-    x = df[numerical_columns].drop(columns=[target_column])
+    X = df[numerical_columns].drop(columns=[target_column])
+    assert isinstance(X, pd.DataFrame)
+    
     y = df[target_column]
+    
+    feature_names = X.columns.tolist()
+    
+    X_discrete = np.zeros_like(X.values)
+    for i, col in enumerate(feature_names):
+        col_values = np.asarray(X[col].values)
+        if np.min(col_values) < 0:
+            col_values = col_values - np.min(col_values)
+        
+        kb = KBinsDiscretizer(n_bins=dstatconst.DHI_FEATURE_SELECTION_DEFAULT_KBINS_N_BINS, encode="ordinal", strategy="uniform")
+        X_discrete[:, i] = kb.fit_transform(col_values.reshape(-1, 1)).ravel()
 
     if mode not in dstatconst.DHI_FEATURE_SELECTION_MODES:
         logger.warning(f"Invalid mode: {mode}, using default mode: {dstatconst.DHI_FEATURE_SELECTION_DEFAULT_MODE}")
@@ -266,40 +296,13 @@ def univariate_feature_selection(
     selector = skfs.GenericUnivariateSelect(score_func=skfs.f_classif, mode=mode) # pyright: ignore[reportArgumentType]
     selector.set_params(**params)
 
-    selector.fit(x, y)
-
-    # Handle zero p-values to avoid log10(0) = -inf
-    # Replace zero p-values with a very small value (machine epsilon)
-    pvalues = np.asarray(selector.pvalues_).copy()
-    pvalues[pvalues == 0] = np.finfo(float).eps
-
-    scores = -np.log10(pvalues)
-
-    # Normalize scores, handling edge cases
-    max_score = scores.max()
-    if max_score > 0 and np.isfinite(max_score):
-        scores /= max_score
-    elif max_score == 0:
-        # All p-values are 1, so all scores are 0 - no normalization needed
-        logger.warning("All p-values are 1, scores are all zero")
-    else:
-        # Handle any remaining non-finite values (shouldn't happen after epsilon replacement, but just in case)
-        finite_scores = scores[np.isfinite(scores)]
-        if len(finite_scores) > 0:
-            max_finite = finite_scores.max()
-            if max_finite > 0:
-                scores = np.where(np.isfinite(scores), scores / max_finite, 1.0)
-            else:
-                scores = np.where(np.isfinite(scores), scores, 0.0)
-        else:
-            # All scores are non-finite (shouldn't happen), set to 1.0
-            scores = np.ones_like(scores)
-            logger.warning("All scores are non-finite, setting to 1.0")
+    selector.fit(X, y)
+    scores = np.nan_to_num(selector.scores_, nan=0.0)
 
     logger.info(f"Univariate feature selection scores: {scores}")
 
     fig = px.bar(
-        x=x.columns,
+        x=feature_names,
         y=scores,
         title=f"Univariate Feature Selection | Target: {target_column}",
         labels=dict(x="Features", y="Scores"),
@@ -313,7 +316,7 @@ def univariate_feature_selection(
 
 def model_feature_selection(
     clf: BaseEstimator,
-    x: pd.DataFrame,
+    X: pd.DataFrame,
     y: pd.Series,
     prefit: bool = False,
 ) -> tuple[pd.DataFrame, BaseEstimator]:
@@ -321,20 +324,20 @@ def model_feature_selection(
     Performs a model feature selection on the dataframe.
 
     :param BaseEstimator clf: The classifier to perform the model feature selection on
-    :param pd.DataFrame x: The dataframe to perform the model feature selection on
+    :param pd.DataFrame X: The dataframe to perform the model feature selection on
     :param pd.Series y: The series to perform the model feature selection on
     :param bool prefit: Whether the classifier is already fitted, defaults to False
     :return tuple[pd.DataFrame, BaseEstimator]: The input dataframe with the selected features and the selector object
     """
     if not prefit:
         logger.warning("Classifier is not fitted, fitting it")
-        clf.fit(x, y) # pyright: ignore[reportAttributeAccessIssue]
+        clf.fit(X, y) # pyright: ignore[reportAttributeAccessIssue]
         prefit = True
 
     selector = skfs.SelectFromModel(clf, prefit=prefit)
-    x_new = selector.transform(x)
+    x_new = np.asarray(selector.transform(X))
 
-    logger.info(f"Selected {x_new.shape} features out of {len(x.columns)} features")
+    logger.info(f"Selected {x_new.shape} features out of {len(X.columns)} features")
 
     return pd.DataFrame(np.asarray(x_new), columns=selector.get_feature_names_out()), selector
 
@@ -372,11 +375,14 @@ def relief_feature_selection(
     # Reset index to ensure sequential indexing (required by ReliefF)
     df = df.reset_index(drop=True)
 
-    x = df[numerical_columns].drop(columns=[target_column])
-    feature_names = x.columns.tolist()
+    X = df[numerical_columns].drop(columns=[target_column])
+    assert isinstance(X, pd.DataFrame)
+    
     y = df[target_column]
 
-    x_array = x.values.astype(np.float64)
+    feature_names = X.columns.tolist()
+
+    X_array = X.values.astype(np.float64)
     y_array = np.asarray(y.values)
 
     if not np.issubdtype(y_array.dtype, np.integer):
@@ -384,9 +390,9 @@ def relief_feature_selection(
         le = LabelEncoder()
         y_array = np.asarray(le.fit_transform(y_array))
 
-    logger.info(f"Performing ReliefF feature selection x={x_array.shape} and y={y_array.shape}")
+    logger.info(f"Performing ReliefF feature selection X={X_array.shape} and y={y_array.shape}")
     selector = skrebate.ReliefF(n_features_to_select=n_features, n_jobs=-1)
-    selector = selector.fit(x_array, y_array)
+    selector = selector.fit(X_array, y_array)
 
     logger.info(f"Selected {n_features} features out of {len(feature_names)} features")
     logger.info(f"Selected features: {selector.top_features_}")

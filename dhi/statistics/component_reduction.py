@@ -11,11 +11,12 @@ from dhi.utils import get_logger
 logger = get_logger(__name__)
 
 
-def _component_reduction(df: pd.DataFrame, n_components: int, title: str, method: str) -> None:
+def _component_reduction(df: pd.DataFrame, color_column: str, n_components: int, title: str, method: str) -> None:
     """
     Helper method to perform component reduction on the provided dataframe.
 
     :param pd.DataFrame df: The dataframe to perform component reduction on
+    :param str color_column: The column to color the plot by
     :param int n_components: The number of components to perform component reduction on
     :param str title: The title of the component reduction plot
     :param str method: The method to perform component reduction on
@@ -68,12 +69,12 @@ def _component_reduction(df: pd.DataFrame, n_components: int, title: str, method
         case 2:
             x = reduced_data[:, 0]
             y = reduced_data[:, 1]
-            plot2d(x, y, title=title, hover_data=hover_data)
+            plot2d(x, y, labels=df[color_column].values, title=title + f" (target={color_column})", hover_data=hover_data)
         case 3:
             x = reduced_data[:, 0]
             y = reduced_data[:, 1]
             z = reduced_data[:, 2]
-            plot3d(x, y, z, title=title, hover_data=hover_data)
+            plot3d(x, y, z, labels=df[color_column].values, title=title + f" (target={color_column})", hover_data=hover_data)
         case _:
             logger.warning(f"Unsupported number of components: {n_components}, skipping PCA plot")
             return
@@ -83,6 +84,7 @@ def _component_reduction(df: pd.DataFrame, n_components: int, title: str, method
 
 def plot_pca(
     df: pd.DataFrame,
+    color_column: str,
     n_components: int = dstatconst.DHI_COMPONENT_REDUCTION_DEFAULT_N_COMPONENTS,
     title: str = "PCA Plot",
 ) -> None:
@@ -90,6 +92,7 @@ def plot_pca(
     PCA component reduction plot on the provided dataframe.
 
     :param pd.DataFrame df: The dataframe to plot the PCA plot of
+    :param str color_column: The column to color the plot by
     :param int n_components: The number of components to plot, defaults to DHI_COMPONENT_REDUCTION_DEFAULT_N_COMPONENTS
     :param str title: The title of the PCA plot, defaults to "PCA Plot"
     """
@@ -97,11 +100,12 @@ def plot_pca(
         logger.warning("The dataframe is empty, skipping PCA plot")
         return
 
-    _component_reduction(df, n_components, title, "pca")
+    _component_reduction(df, color_column, n_components, title, "pca")
 
 
 def plot_tsne(
     df: pd.DataFrame,
+    color_column: str,
     n_components: int = dstatconst.DHI_COMPONENT_REDUCTION_DEFAULT_N_COMPONENTS,
     title: str = "TSNE Plot",
 ) -> None:
@@ -109,6 +113,7 @@ def plot_tsne(
     TSNE component reduction plot on the provided dataframe.
 
     :param pd.DataFrame df: The dataframe to plot the TSNE plot of
+    :param str color_column: The column to color the plot by
     :param int n_components: The number of components to plot, defaults to DHI_COMPONENT_REDUCTION_DEFAULT_N_COMPONENTS
     :param str title: The title of the TSNE plot, defaults to "TSNE Plot"
     """
@@ -116,11 +121,12 @@ def plot_tsne(
         logger.warning("The dataframe is empty, skipping TSNE plot")
         return
 
-    _component_reduction(df, n_components, title, "tsne")
+    _component_reduction(df, color_column, n_components, title, "tsne")
 
 
 def plot_umap(
     df: pd.DataFrame,
+    color_column: str,
     n_components: int = dstatconst.DHI_COMPONENT_REDUCTION_DEFAULT_N_COMPONENTS,
     title: str = "UMAP Plot",
 ) -> None:
@@ -128,6 +134,7 @@ def plot_umap(
     UMAP component reduction plot on the provided dataframe.
 
     :param pd.DataFrame df: The dataframe to plot the UMAP plot of
+    :param str color_column: The column to color the plot by
     :param int n_components: The number of components to plot, defaults to DHI_COMPONENT_REDUCTION_DEFAULT_N_COMPONENTS
     :param str title: The title of the UMAP plot, defaults to "UMAP Plot"
     """
@@ -135,4 +142,4 @@ def plot_umap(
         logger.warning("The dataframe is empty, skipping UMAP plot")
         return
 
-    _component_reduction(df, n_components, title, "umap")
+    _component_reduction(df, color_column, n_components, title, "umap")
