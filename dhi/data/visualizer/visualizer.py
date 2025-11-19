@@ -4,6 +4,7 @@ import plotly.express as px
 import plotly.figure_factory as ff
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
+from typing import Iterable
 
 import dhi.const as dconst
 from dhi.utils import get_logger
@@ -11,12 +12,13 @@ from dhi.utils import get_logger
 logger = get_logger(__name__)
 
 
-def plot2d(x: np.ndarray, y: np.ndarray, title: str = "2D Plot", hover_data: dict = {}) -> None:
+def plot2d(x: np.ndarray, y: np.ndarray, labels: Iterable[str] | None = None, title: str = "2D Plot", hover_data: dict = {}) -> None:
     """
     Plots the 2D plot of the dataframe.
 
     :param np.ndarray x: The array to plot the 2D plot of
     :param np.ndarray y: The array to plot the 2D plot of
+    :param Iterable[str] labels: The labels to use for the plot, defaults to None
     :param str title: The title of the 2D plot, defaults to "2D Plot"
     :param dict hover_data: The data to display on hover, defaults to {}
     """
@@ -24,11 +26,17 @@ def plot2d(x: np.ndarray, y: np.ndarray, title: str = "2D Plot", hover_data: dic
         logger.warning("The arrays have different lengths, skipping 2D plot")
         return
 
+    if labels is not None:
+        color = labels
+    else:
+        color = None
+
     logger.info(f"Plotting 2D plot for {x.shape} with title: {title}")
     fig = px.scatter(
-        x,
-        y,
+        x=x,
+        y=y,
         title=title,
+        color=color,
         color_continuous_scale=dconst.DHI_PLOT_COLOR_CONTINUOUS_SCALE,
         width=dconst.DHI_PLOT_WIDTH,
         height=dconst.DHI_PLOT_HEIGHT,
@@ -38,25 +46,32 @@ def plot2d(x: np.ndarray, y: np.ndarray, title: str = "2D Plot", hover_data: dic
     logger.info("Plotting of 2D plot completed successfully")
 
 
-def plot3d(x: np.ndarray, y: np.ndarray, z: np.ndarray, title: str = "3D Plot", hover_data: dict = {}) -> None:
+def plot3d(x: np.ndarray, y: np.ndarray, z: np.ndarray, labels: Iterable[str] | None = None, title: str = "3D Plot", hover_data: dict = {}) -> None:
     """
     Plots the 3D plot of the dataframe.
 
     :param np.ndarray x: The array to plot the 3D plot of
     :param np.ndarray y: The array to plot the 3D plot of
     :param np.ndarray z: The array to plot the 3D plot of
+    :param Iterable[str] labels: The labels to use for the plot, defaults to None
     :param str title: The title of the 3D plot, defaults to "3D Plot"
     :param dict hover_data: The data to display on hover, defaults to {}
     """
-    if x.shape[0] != y.shape[0] != z.shape[0]:
+    if not (x.shape[0] == y.shape[0] == z.shape[0]):
         logger.warning("The arrays have different lengths, skipping 3D plot")
         return
 
+    if labels is not None:
+        color = labels
+    else:
+        color = None
+
     logger.info(f"Plotting 3D plot for {x.shape} with title: {title}")
     fig = px.scatter_3d(
-        x,
-        y,
-        z,
+        x=x,
+        y=y,
+        z=z,
+        color=color,
         title=title,
         color_continuous_scale=dconst.DHI_PLOT_COLOR_CONTINUOUS_SCALE,
         width=dconst.DHI_PLOT_WIDTH,
