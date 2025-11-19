@@ -126,7 +126,7 @@ def chi2_independence_test(
         X_discrete[:, i] = kb.fit_transform(col_values.reshape(-1, 1)).ravel()
 
     logger.info(f"Performing chi2 independence test on {df.columns} out of {len(df.columns)} columns")
-    chi2_scores, p_values = skfs.chi2(X, y)
+    chi2_scores, p_values = skfs.chi2(X_discrete, y)
 
     logger.info(f"Chi2 scores: {chi2_scores}")
     logger.info(f"P values: {p_values}")
@@ -296,7 +296,7 @@ def univariate_feature_selection(
     selector = skfs.GenericUnivariateSelect(score_func=skfs.f_classif, mode=mode) # pyright: ignore[reportArgumentType]
     selector.set_params(**params)
 
-    selector.fit(X, y)
+    selector.fit(X_discrete, y)
     scores = np.nan_to_num(selector.scores_, nan=0.0)
 
     logger.info(f"Univariate feature selection scores: {scores}")
