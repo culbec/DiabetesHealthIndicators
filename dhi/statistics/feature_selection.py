@@ -296,7 +296,7 @@ def univariate_feature_selection(
     selector = skfs.GenericUnivariateSelect(score_func=skfs.f_classif, mode=mode) # pyright: ignore[reportArgumentType]
     selector.set_params(**params)
 
-    selector.fit(X, y)
+    selector.fit(X_discrete, y)
     scores = np.nan_to_num(selector.scores_, nan=0.0)
 
     logger.info(f"Univariate feature selection scores: {scores}")
