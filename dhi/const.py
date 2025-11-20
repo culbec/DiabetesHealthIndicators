@@ -54,7 +54,7 @@ DHI_NUMPY_FLOAT_RANGES: list[tuple[np.floating, np.floating, type]] = [
 # PLOT CONSTANTS
 ##############################
 
-DHI_PLOT_COLOR_CONTINUOUS_SCALE: str = "RdBu"
+DHI_PLOT_COLOR_CONTINUOUS_SCALE: str = "PiYG"
 DHI_PLOT_WIDTH: int = 1280
 DHI_PLOT_HEIGHT: int = 720
 
