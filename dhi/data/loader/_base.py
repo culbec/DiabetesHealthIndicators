@@ -223,13 +223,17 @@ class Loader(object):
 
         if self.remove_unnamed:
             self.logger.info("Removing unnamed columns from the dataset")
-            df.drop(columns=df.columns[df.columns.str.contains("^Unnamed")], inplace=True)
+            unnamed_cols = df.columns[df.columns.str.contains("^Unnamed")]
+            if unnamed_cols is None or unnamed_cols.empty:
+                self.logger.info("No unnamed columns found")
+            else:
+                df.drop(columns=list(unnamed_cols), inplace=True)
 
         if self.missing_markers:
             self.logger.info(f"Replacing missing markers {self.missing_markers} with NaN")
             df.replace(self.missing_markers, np.nan, inplace=True)
 
-        self.logger.info(f"Removing instances with all NaN values")
+        self.logger.info("Removing instances with all NaN values")
         initial_shape = df.shape
         df.dropna(axis=0, how="all", inplace=True)
         if df.shape != initial_shape:

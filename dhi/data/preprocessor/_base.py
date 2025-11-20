@@ -110,7 +110,11 @@ class Preprocessor(object):
             elif pd.api.types.is_object_dtype(df_nan_handled[feature]):
                 df_nan_handled[feature] = df_nan_handled[feature].fillna(self.nan_category)
             else:
-                df_nan_handled[feature] = df_nan_handled[feature].fillna(df_nan_handled[feature].mode(dropna=True)[0])
+                most_common_value = df_nan_handled[feature].mode(dropna=True)
+                if most_common_value is None or most_common_value.empty:
+                    self.logger.warning(f"No most common value found for feature {feature}, skipping NaN handling")
+                    continue
+                df_nan_handled[feature] = df_nan_handled[feature].fillna(most_common_value.iloc[0])
 
         return df_nan_handled
 
@@ -155,7 +159,7 @@ class Preprocessor(object):
             )
             scaler_info["type"] = dppconst.DHI_PREPROCESSOR_DEFAULT_SCALER
         if not isinstance(scaler_info.get("params", {}), dict):
-            self.logger.warning(f"scaler_info['params'] must be a dictionary, defaulting to {{}}")
+            self.logger.warning("scaler_info['params'] must be a dictionary, defaulting to empty dictionary")
             scaler_info["params"] = {}
 
         scaler_type = scaler_info.get("type", dppconst.DHI_PREPROCESSOR_DEFAULT_SCALER)
@@ -187,12 +191,15 @@ class Preprocessor(object):
         df_numerical_transformed = df.copy()
 
         for feature_to_transform in features_to_transform:
-            scaler_instance = dppconst.DHI_PREPROCESSOR_NUMERICAL_SCALERS[scaler_type](**scaler_params) # pyright: ignore[reportCallIssue]
-            fitted_scaler_instance = scaler_instance.fit( # pyright: ignore[reportAttributeAccessIssue]
-                df_numerical_transformed[feature_to_transform].values.reshape(-1, 1)
+            scaler_instance = dppconst.DHI_PREPROCESSOR_NUMERICAL_SCALERS[scaler_type](
+                **scaler_params
+            )  # pyright: ignore[reportCallIssue]
+            col_values = df_numerical_transformed[feature_to_transform].to_numpy().reshape(-1, 1)
+            fitted_scaler_instance = scaler_instance.fit(  # pyright: ignore[reportAttributeAccessIssue]
+                col_values
             )
             df_numerical_transformed[feature_to_transform] = fitted_scaler_instance.transform(
-                df_numerical_transformed[feature_to_transform].values.reshape(-1, 1)
+                col_values
             ).flatten()
 
             self.numerical_scaling_data[feature_to_transform] = fitted_scaler_instance
@@ -236,7 +243,7 @@ class Preprocessor(object):
             )
             encoder_info["type"] = dppconst.DHI_PREPROCESSOR_DEFAULT_ENCODER
         if not isinstance(encoder_info.get("params", {}), dict):
-            self.logger.warning(f"encoder_info['params'] must be a dictionary, defaulting to {{}}")
+            self.logger.warning("encoder_info['params'] must be a dictionary, defaulting to empty dictionary")
             encoder_info["params"] = {}
 
         encoder_type = encoder_info.get("type", dppconst.DHI_PREPROCESSOR_DEFAULT_ENCODER)
@@ -266,10 +273,14 @@ class Preprocessor(object):
         df_categorical_encoded = df.copy()
 
         for feature_to_encode in features_to_encode:
-            encoder_instance = dppconst.DHI_PREPROCESSOR_CATEGORICAL_ENCODERS[encoder_type](**encoder_params) # pyright: ignore[reportCallIssue]
-            fitted_encoder_instance = encoder_instance.fit(df_categorical_encoded[feature_to_encode].values) # pyright: ignore[reportAttributeAccessIssue]
+            encoder_instance = dppconst.DHI_PREPROCESSOR_CATEGORICAL_ENCODERS[encoder_type](
+                **encoder_params
+            )  # pyright: ignore[reportCallIssue]
+            fitted_encoder_instance = encoder_instance.fit(  # pyright: ignore[reportAttributeAccessIssue]
+                df_categorical_encoded[feature_to_encode].to_numpy().reshape(-1, 1)
+            )  # pyright: ignore[reportAttributeAccessIssue]
             df_categorical_encoded[feature_to_encode] = fitted_encoder_instance.transform(
-                df_categorical_encoded[feature_to_encode].values
+                df_categorical_encoded[feature_to_encode].to_numpy().reshape(-1, 1)
             )
 
             self.categorical_encoding_data[feature_to_encode] = fitted_encoder_instance
