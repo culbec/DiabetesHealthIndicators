@@ -276,12 +276,12 @@ class Preprocessor(object):
             encoder_instance = dppconst.DHI_PREPROCESSOR_CATEGORICAL_ENCODERS[encoder_type](
                 **encoder_params
             )  # pyright: ignore[reportCallIssue]
-            fitted_encoder_instance = encoder_instance.fit(  # pyright: ignore[reportAttributeAccessIssue]
-                df_categorical_encoded[feature_to_encode].to_numpy().reshape(-1, 1)
-            )  # pyright: ignore[reportAttributeAccessIssue]
-            df_categorical_encoded[feature_to_encode] = fitted_encoder_instance.transform(
-                df_categorical_encoded[feature_to_encode].to_numpy().reshape(-1, 1)
-            )
+            values = df_categorical_encoded[feature_to_encode].to_numpy()
+            # LabelEncoder is the only encoder that requires a 1D array
+            if encoder_type != "label_encoder":
+                values = values.reshape(-1, 1)
+            fitted_encoder_instance = encoder_instance.fit(values)  # pyright: ignore[reportAttributeAccessIssue]
+            df_categorical_encoded[feature_to_encode] = fitted_encoder_instance.transform(values)
 
             self.categorical_encoding_data[feature_to_encode] = fitted_encoder_instance
 

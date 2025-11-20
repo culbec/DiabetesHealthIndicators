@@ -32,7 +32,7 @@ def _select_numerical_columns(df: pd.DataFrame, columns: list[str] | None = None
     
     return columns
 
-def _discrete_x(X: pd.DataFrame | pd.Series) -> np.ndarray:
+def _discrete_x(X: pd.DataFrame | pd.Series, n_bins: int) -> np.ndarray:
     X_discrete = np.zeros_like(X.values)
 
     # Discretize every feature independently
@@ -42,7 +42,7 @@ def _discrete_x(X: pd.DataFrame | pd.Series) -> np.ndarray:
             col_values = col_values - np.min(col_values)
 
         kb = KBinsDiscretizer(
-            n_bins=dstatconst.DHI_FEATURE_SELECTION_DEFAULT_KBINS_N_BINS,
+            n_bins=n_bins,
             encode="ordinal",
             strategy="uniform",
         )
@@ -153,22 +153,7 @@ def chi2_independence_test(
     feature_names = X.columns.tolist()
 
     # Discretize every feature independently
-    X_discrete = np.zeros_like(X.values)
-
-    for i, col in enumerate(feature_names):
-        col_values = X[col]
-        if not isinstance(col_values, np.ndarray):
-            col_values = col_values.to_numpy().reshape(-1, 1)
-        else:
-            col_values = col_values.reshape(-1, 1)
-
-        # Ensure non-negative values
-        if np.min(col_values) < 0:
-            col_values = col_values - np.min(col_values)
-
-        # Discretize
-        kb = KBinsDiscretizer(n_bins=n_bins, encode="ordinal", strategy="uniform")
-        X_discrete[:, i] = kb.fit_transform(col_values.reshape(-1, 1)).ravel()
+    X_discrete = _discrete_x(X, n_bins)
 
     logger.info(f"Performing chi2 independence test on {df.columns} out of {len(df.columns)} columns")
     chi2_scores, p_values = skfs.chi2(X_discrete, y)
@@ -214,7 +199,7 @@ def variance_threshold_feature_selection(
     label_columns = list(set(label_columns) - {target_column})
     df = df.drop(columns=label_columns)
 
-    numerical_columns = df.select_dtypes(include=["number"]).columns.tolist()
+    numerical_columns = _select_numerical_columns(df)
     if not numerical_columns:
         logger.warning("No numerical columns found, skipping variance threshold feature selection")
         return np.array([])
@@ -308,7 +293,7 @@ def univariate_feature_selection(
     label_columns = list(set(label_columns) - {target_column})
     df = df.drop(columns=label_columns)
 
-    numerical_columns = df.select_dtypes(include=["number"]).columns.tolist()
+    numerical_columns = _select_numerical_columns(df)
     if not numerical_columns:
         logger.warning("No numerical columns found, skipping univariate feature selection")
         return
@@ -317,21 +302,16 @@ def univariate_feature_selection(
         return
 
     X = df[numerical_columns].drop(columns=[target_column])
-    assert isinstance(X, pd.DataFrame)
+    if X is None or X.empty:
+        logger.error("X is None or empty, skipping univariate feature selection")
+        return
     
     y = df[target_column]
     
     feature_names = X.columns.tolist()
     
-    X_discrete = np.zeros_like(X.values)
-    for i, col in enumerate(feature_names):
-        col_values = np.asarray(X[col].values)
-        if np.min(col_values) < 0:
-            col_values = col_values - np.min(col_values)
-        
-        kb = KBinsDiscretizer(n_bins=dstatconst.DHI_FEATURE_SELECTION_DEFAULT_KBINS_N_BINS, encode="ordinal", strategy="uniform")
-        X_discrete[:, i] = kb.fit_transform(col_values.reshape(-1, 1)).ravel()
-
+    X_discrete = _discrete_x(X, dstatconst.DHI_FEATURE_SELECTION_DEFAULT_KBINS_N_BINS)
+    
     if mode not in dstatconst.DHI_FEATURE_SELECTION_MODES:
         logger.warning(f"Invalid mode: {mode}, using default mode: {dstatconst.DHI_FEATURE_SELECTION_DEFAULT_MODE}")
         mode = dstatconst.DHI_FEATURE_SELECTION_DEFAULT_MODE
@@ -409,7 +389,7 @@ def relief_feature_selection(
     label_columns = list(set(label_columns) - {target_column})
     df = df.drop(columns=label_columns)
 
-    numerical_columns = df.select_dtypes(include=["number"]).columns.tolist()
+    numerical_columns = _select_numerical_columns(df)
     if not numerical_columns:
         logger.warning("No numerical columns found, skipping relief feature selection")
         return
@@ -421,7 +401,9 @@ def relief_feature_selection(
     df = df.reset_index(drop=True)
 
     X = df[numerical_columns].drop(columns=[target_column])
-    assert isinstance(X, pd.DataFrame)
+    if X is None or X.empty:
+        logger.error("X is None or empty, skipping relief feature selection")
+        return
     
     y = df[target_column]
 
