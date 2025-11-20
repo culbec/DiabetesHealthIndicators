@@ -1,7 +1,9 @@
+from gc import collect
 from typing import Any
 
 import numpy as np
 import pandas as pd
+from pandas.core.generic import collections
 import plotly.express as px
 import plotly.graph_objects as go
 import sklearn.feature_selection as skfs
@@ -15,6 +17,38 @@ from dhi.utils import get_logger
 
 logger = get_logger(__name__)
 
+def _select_numerical_columns(df: pd.DataFrame, columns: list[str] | None = None) -> list[str]:
+    if not columns:
+        logger.warning("No columns provided, using all numerical columns")
+        columns = df.select_dtypes(include=["number"]).columns.tolist()
+    else:
+        logger.info("Filtering columns with DataFrame columns")
+        columns = [column for column in columns if column in df.columns]
+        columns = df[columns].select_dtypes(include=["number"]).columns.tolist()
+
+    if not columns:
+        logger.warning("No numerical columns found, skipping feature selection")
+        return []
+    
+    return columns
+
+def _discrete_x(X: pd.DataFrame | pd.Series) -> np.ndarray:
+    X_discrete = np.zeros_like(X.values)
+
+    # Discretize every feature independently
+    for i in range(X.shape[1]):
+        col_values = np.asarray(X.iloc[:, i].values)
+        if np.min(col_values) < 0:
+            col_values = col_values - np.min(col_values)
+
+        kb = KBinsDiscretizer(
+            n_bins=dstatconst.DHI_FEATURE_SELECTION_DEFAULT_KBINS_N_BINS,
+            encode="ordinal",
+            strategy="uniform",
+        )
+        X_discrete[:, i] = kb.fit_transform(col_values.reshape(-1, 1)).ravel()
+
+    return X_discrete
 
 def correlation_matrix(
     df: pd.DataFrame,
@@ -45,12 +79,19 @@ def correlation_matrix(
         return
 
     logger.info(f"Plotting correlation matrix for {columns} out of {len(df.columns)} columns")
-    df_corr = df[columns].corr()
+    
+    df_subset = df[columns]
+    if df_subset is None or df_subset.empty:
+        logger.warning("No numerical columns found, skipping correlation matrix plot")
+        return
+    if isinstance(df_subset, pd.Series):
+        df_subset = df_subset.to_frame()
+    df_corr = df_subset.corr()
 
     logger.info(f"Using title: {title}")
     fig = px.imshow(
         df_corr,
-        labels=dict(x="Features", y="Features"),
+        labels={"x": "Features", "y": "Features"},
         text_auto=True,
         aspect="auto",
         title=title,
@@ -90,11 +131,11 @@ def chi2_independence_test(
     label_columns = list(set(label_columns) - {target_column})
     df = df.drop(columns=label_columns)
 
-    numerical_columns = df.select_dtypes(include=["number"]).columns.tolist()
+    numerical_columns = _select_numerical_columns(df, df.columns.to_list())
     if not numerical_columns:
         logger.warning("No numerical columns found, skipping chi2 independence test")
         return
-    if not target_column in numerical_columns:
+    if target_column not in numerical_columns:
         logger.warning("Target column is not a numerical column, skipping chi2 independence test")
         return
 
@@ -103,11 +144,11 @@ def chi2_independence_test(
         n_bins = dstatconst.DHI_FEATURE_SELECTION_DEFAULT_KBINS_N_BINS
 
     X = df[numerical_columns].drop(columns=[target_column])
-    assert isinstance(X, pd.DataFrame)
+    if X is None or X.empty:
+        logger.error("X is None or empty, skipping chi2 independence test")
+        return
     
     y = df[target_column].astype(int)
-    
-    X_discrete = np.zeros_like(X.values)
     
     feature_names = X.columns.tolist()
 
@@ -115,7 +156,11 @@ def chi2_independence_test(
     X_discrete = np.zeros_like(X.values)
 
     for i, col in enumerate(feature_names):
-        col_values = np.asarray(X[col].values)
+        col_values = X[col]
+        if not isinstance(col_values, np.ndarray):
+            col_values = col_values.to_numpy().reshape(-1, 1)
+        else:
+            col_values = col_values.reshape(-1, 1)
 
         # Ensure non-negative values
         if np.min(col_values) < 0:
@@ -135,7 +180,7 @@ def chi2_independence_test(
         x=feature_names,
         y=chi2_scores,
         title=f"Chi2 Independence Test | Target: {target_column}",
-        labels=dict(x="Features", y="Chi2 Scores"),
+        labels={"x": "Features", "y": "Chi2 Scores"},
         width=dconst.DHI_PLOT_WIDTH,
         height=dconst.DHI_PLOT_HEIGHT,
     )
@@ -173,7 +218,7 @@ def variance_threshold_feature_selection(
     if not numerical_columns:
         logger.warning("No numerical columns found, skipping variance threshold feature selection")
         return np.array([])
-    if not target_column in numerical_columns:
+    if target_column not in numerical_columns:
         logger.warning("Target column is not a numerical column, skipping variance threshold feature selection")
         return np.array([])
 
@@ -227,7 +272,7 @@ def variance_threshold_feature_selection(
         yaxis_title="Variance",
         width=dconst.DHI_PLOT_WIDTH,
         height=dconst.DHI_PLOT_HEIGHT,
-        legend=dict(title="Dataset"),
+        legend={"title": "Dataset"},
         hovermode="closest",
     )
 
@@ -267,7 +312,7 @@ def univariate_feature_selection(
     if not numerical_columns:
         logger.warning("No numerical columns found, skipping univariate feature selection")
         return
-    if not target_column in numerical_columns:
+    if target_column not in numerical_columns:
         logger.warning("Target column is not a numerical column, skipping univariate feature selection")
         return
 
@@ -305,7 +350,7 @@ def univariate_feature_selection(
         x=feature_names,
         y=scores,
         title=f"Univariate Feature Selection | Target: {target_column}",
-        labels=dict(x="Features", y="Scores"),
+        labels={"x": "Features", "y": "Scores"},
         width=dconst.DHI_PLOT_WIDTH,
         height=dconst.DHI_PLOT_HEIGHT,
     )
@@ -368,7 +413,7 @@ def relief_feature_selection(
     if not numerical_columns:
         logger.warning("No numerical columns found, skipping relief feature selection")
         return
-    if not target_column in numerical_columns:
+    if target_column not in numerical_columns:
         logger.warning("Target column is not a numerical column, skipping relief feature selection")
         return
 
