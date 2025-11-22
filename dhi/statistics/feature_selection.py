@@ -1,9 +1,7 @@
-from gc import collect
-from typing import Any
+from typing import Any, Literal, TypeAlias
 
 import numpy as np
 import pandas as pd
-from pandas.core.generic import collections
 import plotly.express as px
 import plotly.graph_objects as go
 import sklearn.feature_selection as skfs
@@ -17,6 +15,11 @@ from dhi.utils import get_logger
 
 logger = get_logger(__name__)
 
+from typing import Callable
+
+UnivariateFeatureSelectionFunction: TypeAlias = Callable[..., Any]
+
+
 def _select_numerical_columns(df: pd.DataFrame, columns: list[str] | None = None) -> list[str]:
     if not columns:
         logger.warning("No columns provided, using all numerical columns")
@@ -29,8 +32,9 @@ def _select_numerical_columns(df: pd.DataFrame, columns: list[str] | None = None
     if not columns:
         logger.warning("No numerical columns found, skipping feature selection")
         return []
-    
+
     return columns
+
 
 def _discrete_x(X: pd.DataFrame | pd.Series, n_bins: int) -> np.ndarray:
     X_discrete = np.zeros_like(X.values)
@@ -49,6 +53,7 @@ def _discrete_x(X: pd.DataFrame | pd.Series, n_bins: int) -> np.ndarray:
         X_discrete[:, i] = kb.fit_transform(col_values.reshape(-1, 1)).ravel()
 
     return X_discrete
+
 
 def correlation_matrix(
     df: pd.DataFrame,
@@ -79,7 +84,7 @@ def correlation_matrix(
         return
 
     logger.info(f"Plotting correlation matrix for {columns} out of {len(df.columns)} columns")
-    
+
     df_subset = df[columns]
     if df_subset is None or df_subset.empty:
         logger.warning("No numerical columns found, skipping correlation matrix plot")
@@ -147,9 +152,9 @@ def chi2_independence_test(
     if X is None or X.empty:
         logger.error("X is None or empty, skipping chi2 independence test")
         return
-    
+
     y = df[target_column].astype(int)
-    
+
     feature_names = X.columns.tolist()
 
     # Discretize every feature independently
@@ -224,7 +229,9 @@ def variance_threshold_feature_selection(
 
     # Get feature names for original and filtered features
     original_features = list(X.columns)
-    selected_features = [original_features[i] for i in high_var_indices] if high_var_indices is not None else original_features
+    selected_features = (
+        [original_features[i] for i in high_var_indices] if high_var_indices is not None else original_features
+    )
 
     # Create bar plot visualization
     fig = go.Figure()
@@ -263,12 +270,13 @@ def variance_threshold_feature_selection(
 
     fig.show()
     logger.info("Plotting of variance threshold feature selection completed successfully")
-    
+
     return np.array(x_filtered.columns)
 
 
 def univariate_feature_selection(
     df: pd.DataFrame,
+    score_func: UnivariateFeatureSelectionFunction,
     label_columns: list[str],
     target_column: str,
     mode: str = "percentile",
@@ -280,6 +288,7 @@ def univariate_feature_selection(
     Allows different modes and settable parameters for the feature selection.
 
     :param pd.DataFrame df: The dataframe to perform the univariate feature selection on
+    :param UnivariateFeatureSelectionFunction score_func: The score function to perform the univariate feature selection on
     :param list[str] label_columns: The columns to remove from the dataframe
     :param str target_column: The column to perform the univariate feature selection on
     :param str mode: The mode to perform the univariate feature selection on, defaults to "percentile"
@@ -305,31 +314,32 @@ def univariate_feature_selection(
     if X is None or X.empty:
         logger.error("X is None or empty, skipping univariate feature selection")
         return
-    
+
     y = df[target_column]
-    
+
     feature_names = X.columns.tolist()
-    
+
     X_discrete = _discrete_x(X, dstatconst.DHI_FEATURE_SELECTION_DEFAULT_KBINS_N_BINS)
-    
+
     if mode not in dstatconst.DHI_FEATURE_SELECTION_MODES:
         logger.warning(f"Invalid mode: {mode}, using default mode: {dstatconst.DHI_FEATURE_SELECTION_DEFAULT_MODE}")
         mode = dstatconst.DHI_FEATURE_SELECTION_DEFAULT_MODE
 
     params = dstatconst.DHI_FEATURE_SELECTION_MODES[mode] if not params else params
 
-    selector = skfs.GenericUnivariateSelect(score_func=skfs.f_classif, mode=mode) # pyright: ignore[reportArgumentType]
+    selector = skfs.GenericUnivariateSelect(score_func=score_func, mode=mode)  # pyright: ignore[reportArgumentType]
     selector.set_params(**params)
 
     selector.fit(X_discrete, y)
     scores = np.nan_to_num(selector.scores_, nan=0.0)
+    scores /= np.max(scores)
 
     logger.info(f"Univariate feature selection scores: {scores}")
 
     fig = px.bar(
         x=feature_names,
         y=scores,
-        title=f"Univariate Feature Selection | Target: {target_column}",
+        title=f"Univariate Feature Selection | Target: {target_column} | Score Function: {score_func.__name__}",
         labels={"x": "Features", "y": "Scores"},
         width=dconst.DHI_PLOT_WIDTH,
         height=dconst.DHI_PLOT_HEIGHT,
@@ -338,6 +348,7 @@ def univariate_feature_selection(
     fig.show()
 
     logger.info("Plotting of univariate feature selection completed successfully")
+
 
 def model_feature_selection(
     clf: BaseEstimator,
@@ -356,7 +367,7 @@ def model_feature_selection(
     """
     if not prefit:
         logger.warning("Classifier is not fitted, fitting it")
-        clf.fit(X, y) # pyright: ignore[reportAttributeAccessIssue]
+        clf.fit(X, y)  # pyright: ignore[reportAttributeAccessIssue]
         prefit = True
 
     selector = skfs.SelectFromModel(clf, prefit=prefit)
@@ -404,7 +415,7 @@ def relief_feature_selection(
     if X is None or X.empty:
         logger.error("X is None or empty, skipping relief feature selection")
         return
-    
+
     y = df[target_column]
 
     feature_names = X.columns.tolist()
