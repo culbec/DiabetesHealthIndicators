@@ -4,13 +4,13 @@ import requests
 import zipfile
 
 ROOT_DIR = pathlib.Path(__file__).parent
-DATASETS_FILE = ROOT_DIR / "datasets.json"
+DATASETS_PATH = ROOT_DIR / "datasets.json"
 
 
 def download_datasets() -> list[tuple[pathlib.Path, Exception]]:
     datasets: list[tuple[str, Exception | None]] = []
 
-    with open(DATASETS_FILE, "r") as f:
+    with open(DATASETS_PATH, "r") as f:
         asset_datasets = json.load(f)
 
     assert isinstance(asset_datasets, list), "Datasets must be a list"

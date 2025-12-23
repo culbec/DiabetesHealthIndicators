@@ -2,7 +2,7 @@ import logging
 import pathlib
 from logging.handlers import RotatingFileHandler
 
-from dhi.const import (
+from dhi.constants import (
     DHI_LOGGING_BACKUP_COUNT,
     DHI_LOGGING_FORMAT,
     DHI_LOGGING_LOG_LEVEL,

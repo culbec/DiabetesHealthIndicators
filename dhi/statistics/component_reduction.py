@@ -4,7 +4,7 @@ from sklearn.decomposition import PCA
 from sklearn.manifold import TSNE
 from umap import UMAP
 
-import dhi.statistics.const as dstatconst
+import dhi.constants as dconst
 from dhi.data.visualizer.visualizer import plot2d, plot3d
 from dhi.utils import get_logger
 
@@ -85,7 +85,7 @@ def _component_reduction(df: pd.DataFrame, color_column: str, n_components: int,
 def plot_pca(
     df: pd.DataFrame,
     color_column: str,
-    n_components: int = dstatconst.DHI_COMPONENT_REDUCTION_DEFAULT_N_COMPONENTS,
+    n_components: int = dconst.DHI_COMPONENT_REDUCTION_DEFAULT_N_COMPONENTS,
     title: str = "PCA Plot",
 ) -> None:
     """
@@ -106,7 +106,7 @@ def plot_pca(
 def plot_tsne(
     df: pd.DataFrame,
     color_column: str,
-    n_components: int = dstatconst.DHI_COMPONENT_REDUCTION_DEFAULT_N_COMPONENTS,
+    n_components: int = dconst.DHI_COMPONENT_REDUCTION_DEFAULT_N_COMPONENTS,
     title: str = "TSNE Plot",
 ) -> None:
     """
@@ -127,7 +127,7 @@ def plot_tsne(
 def plot_umap(
     df: pd.DataFrame,
     color_column: str,
-    n_components: int = dstatconst.DHI_COMPONENT_REDUCTION_DEFAULT_N_COMPONENTS,
+    n_components: int = dconst.DHI_COMPONENT_REDUCTION_DEFAULT_N_COMPONENTS,
     title: str = "UMAP Plot",
 ) -> None:
     """

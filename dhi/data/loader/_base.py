@@ -5,7 +5,7 @@ from typing import Any
 import numpy as np
 import pandas as pd
 
-import dhi.const as dconst
+import dhi.constants as dconst
 from dhi.decorators import time_func
 from dhi.utils import get_filetype, get_logger
 

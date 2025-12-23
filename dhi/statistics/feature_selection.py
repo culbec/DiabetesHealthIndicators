@@ -1,4 +1,4 @@
-from typing import Any, Literal, TypeAlias
+from typing import Any, TypeAlias
 
 import numpy as np
 import pandas as pd
@@ -9,8 +9,7 @@ import skrebate
 from sklearn.base import BaseEstimator
 from sklearn.preprocessing import KBinsDiscretizer, LabelEncoder
 
-import dhi.const as dconst
-import dhi.statistics.const as dstatconst
+import dhi.constants as dconst
 from dhi.utils import get_logger
 
 logger = get_logger(__name__)
@@ -117,7 +116,7 @@ def chi2_independence_test(
     df: pd.DataFrame,
     label_columns: list[str],
     target_column: str,
-    n_bins: int = dstatconst.DHI_FEATURE_SELECTION_DEFAULT_KBINS_N_BINS,
+    n_bins: int = dconst.DHI_FEATURE_SELECTION_DEFAULT_KBINS_N_BINS,
 ) -> None:
     """
     Performs a chi2 independence test on the dataframe.
@@ -146,7 +145,7 @@ def chi2_independence_test(
 
     if n_bins <= 0:
         logger.warning("Number of bins must be greater than 0, using default number of bins")
-        n_bins = dstatconst.DHI_FEATURE_SELECTION_DEFAULT_KBINS_N_BINS
+        n_bins = dconst.DHI_FEATURE_SELECTION_DEFAULT_KBINS_N_BINS
 
     X = df[numerical_columns].drop(columns=[target_column])
     if X is None or X.empty:
@@ -184,7 +183,7 @@ def variance_threshold_feature_selection(
     df: pd.DataFrame,
     label_columns: list[str],
     target_column: str,
-    threshold: float = dstatconst.DHI_FEATURE_SELECTION_DEFAULT_VARIANCE_THRESHOLD,
+    threshold: float = dconst.DHI_FEATURE_SELECTION_DEFAULT_VARIANCE_THRESHOLD,
 ) -> np.ndarray:
     """
     Performs a variance threshold feature selection on the dataframe.
@@ -194,7 +193,7 @@ def variance_threshold_feature_selection(
     :param pd.DataFrame df: The dataframe to perform the variance threshold feature selection on
     :param list[str] label_columns: The columns to remove from the dataframe
     :param str target_column: The column to perform the variance threshold feature selection on
-    :param float threshold: The threshold to perform the variance threshold feature selection on, defaults to dstatconst.DHI_FEATURE_SELECTION_DEFAULT_VARIANCE_THRESHOLD
+    :param float threshold: The threshold to perform the variance threshold feature selection on, defaults to dconst.DHI_FEATURE_SELECTION_DEFAULT_VARIANCE_THRESHOLD
     :return np.ndarray: The selected features
     """
     if df.empty:
@@ -319,13 +318,13 @@ def univariate_feature_selection(
 
     feature_names = X.columns.tolist()
 
-    X_discrete = _discrete_x(X, dstatconst.DHI_FEATURE_SELECTION_DEFAULT_KBINS_N_BINS)
+    X_discrete = _discrete_x(X, dconst.DHI_FEATURE_SELECTION_DEFAULT_KBINS_N_BINS)
 
-    if mode not in dstatconst.DHI_FEATURE_SELECTION_MODES:
-        logger.warning(f"Invalid mode: {mode}, using default mode: {dstatconst.DHI_FEATURE_SELECTION_DEFAULT_MODE}")
-        mode = dstatconst.DHI_FEATURE_SELECTION_DEFAULT_MODE
+    if mode not in dconst.DHI_FEATURE_SELECTION_MODES:
+        logger.warning(f"Invalid mode: {mode}, using default mode: {dconst.DHI_FEATURE_SELECTION_DEFAULT_MODE}")
+        mode = dconst.DHI_FEATURE_SELECTION_DEFAULT_MODE
 
-    params = dstatconst.DHI_FEATURE_SELECTION_MODES[mode] if not params else params
+    params = dconst.DHI_FEATURE_SELECTION_MODES[mode] if not params else params
 
     selector = skfs.GenericUnivariateSelect(score_func=score_func, mode=mode)  # pyright: ignore[reportArgumentType]
     selector.set_params(**params)
@@ -382,7 +381,7 @@ def relief_feature_selection(
     df: pd.DataFrame,
     label_columns: list[str],
     target_column: str,
-    n_features: int = dstatconst.DHI_FEATURE_SELECTION_DEFAULT_RELIEF_N_FEATURES,
+    n_features: int = dconst.DHI_FEATURE_SELECTION_DEFAULT_RELIEF_N_FEATURES,
 ) -> None:
     """
     Performs a relief feature selection on the dataframe.

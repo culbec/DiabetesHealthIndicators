@@ -6,7 +6,7 @@ import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 from typing import Iterable
 
-import dhi.const as dconst
+import dhi.constants as dconst
 from dhi.utils import get_logger
 
 logger = get_logger(__name__)
