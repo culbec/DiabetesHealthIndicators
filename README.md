@@ -1,10 +1,11 @@
-# DiabetesHealthIndicators
+# Diabetes Health Indicators
 
 Repository containing collaborative work on predicting the diabetes risk based on collected health indicators. The ML methods are implemented from scratch and compared with existing approaches in libraries.
+TODO: add details about the implemented methods and results.
 
 ## Setup
 
-This project uses `Poetry` as its package backend. For Poetry setup, refer to the [official website](https://python-poetry.org/).
+This project uses `Poetry` as its package manager. For Poetry setup, refer to the [official website](https://python-poetry.org/).
 
 To ensure robust Python version management, we use `PyEnv`. The Python version set for this project is set in the `.python-version` file. For instructions on how to setup PyEnv, refer to the [official repository](https://github.com/pyenv/pyenv).
 
@@ -37,7 +38,7 @@ poetry shell
 - run the dataset downloader:
 
 ```cmd
-python ./.datasets/dwn_datasets.py
+python ./.datasets/download_datasets.py
 ```
 
 - setup done!

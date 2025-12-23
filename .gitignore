@@ -1,7 +1,7 @@
 #### Datasets - they will be manually downloaded
 .datasets/*
 !.datasets/datasets.json
-!.datasets/dwn_datasets.py
+!.datasets/download_datasets.py
 
 #### Python ignores
 
