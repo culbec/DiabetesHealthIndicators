@@ -3,7 +3,7 @@ import pathlib
 import numpy as np
 
 from typing import Any
-
+# TODO: find a better way to separate constants on module level? maybe using init files per submodule?
 ##############################
 # GENERAL CONSTANTS
 ##############################

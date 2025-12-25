@@ -156,7 +156,7 @@ class Loader(object):
         Internal method used to load the dataset from its path,
         considering the filetype.
 
-        Fallsback to reading CSV if the filetype is not supported.
+        Falls back to reading CSV if the filetype is not supported.
 
         :return pd.DataFrame: The read dataset.
         """
