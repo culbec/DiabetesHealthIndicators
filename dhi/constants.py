@@ -2,7 +2,10 @@ import logging
 import pathlib
 import numpy as np
 
-from typing import Any
+from sklearn.base import BaseEstimator
+from sklearn.svm import SVR
+from sklearn.ensemble import RandomForestClassifier
+from typing import Any, Type
 
 ##############################
 # GENERAL CONSTANTS
@@ -101,3 +104,12 @@ DHI_FEATURE_SELECTION_DEFAULT_VARIANCE_THRESHOLD: float = 0.2
 
 DHI_COMPONENT_REDUCTION_DEFAULT_N_COMPONENTS: int = 2
 
+##############################
+# ML CONSTANTS
+##############################
+
+# "model_name": (model_class, task_type)
+DHI_ML_MODEL_MAPPING: dict[str, tuple[Type[BaseEstimator], str]] = {
+    "svr": (SVR, "regression"),
+    "rfc": (RandomForestClassifier, "classification"),
+}
