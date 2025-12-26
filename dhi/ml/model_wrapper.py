@@ -21,17 +21,17 @@ class ModelWrapper(object):
         assert isinstance(self.model_name, str), "model_name must be a string"
         assert (
             self.model_name in dconst.DHI_ML_MODEL_MAPPING
-        ), f"model must be one of {list(dconst.DHI_ML_MODEL_MAPPING.keys())}"
+        ), f"model_name must be one of {list(dconst.DHI_ML_MODEL_MAPPING.keys())}"
         self.model, self.task_type = dconst.DHI_ML_MODEL_MAPPING[self.model_name]
 
         self.save_path = kwargs.get("save_path", None)
-        assert isinstance(self.save_path, (str, None)), "save_path must be a string"
+        assert self.save_path is None or isinstance(self.save_path, str), "save_path must be a string"
         self.save_path = (
             pathlib.Path(self.save_path) / f"{self.model_name}.pkl" if self.save_path else None
         )
 
         self.metrics_path = kwargs.get("metrics_path", None)
-        assert isinstance(self.metrics_path, (str, None)), "metrics_path must be a string"
+        assert self.metrics_path is None or isinstance(self.metrics_path, str), "metrics_path must be a string"
         self.metrics_path = (
             pathlib.Path(self.metrics_path) / f"{self.model_name}_metrics.json"
             if self.metrics_path
@@ -103,12 +103,16 @@ class ModelWrapper(object):
         return self.model.predict(X)
 
     @time_func
-    def predict_proba(self, X: pd.DataFrame) -> np.ndarray:
-        return self.model.predict_proba(X)
+    def predict_proba(self, X: pd.DataFrame) -> np.ndarray | None:
+        if hasattr(self.model, "predict_proba"):
+            return self.model.predict_proba(X)
+        else:
+            self.logger.warning(f"Model {self.model_name} does not have a predict_proba method. Returning None.")
+            return None
 
     @time_func
     def score(self, X: pd.DataFrame, y: pd.Series) -> dict[str, float]:
-        y_pred = self.predict(X)
+        y_pred, y_proba = self.predict(X), self.predict_proba(X)
 
         scorer = Scorer(self.model, self.task_type)
         metrics = scorer.score(y, y_pred)
