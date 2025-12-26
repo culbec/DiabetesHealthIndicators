@@ -6,7 +6,8 @@
             "decimal": ".",
             "label_columns": [
                 "diabetes_stage",
-                "diagnosed_diabetes"
+                "diagnosed_diabetes",
+                "diabetes_risk_score"
             ]
         },
         "preprocessor": {
@@ -75,6 +76,38 @@
                 "diagnosed_diabetes": {
                     "0": "No",
                     "1": "Yes"
+                }
+            }
+        },
+        "ml": {
+            "svr": {
+                "model_name": "svr",
+                "save_path": "../.models/svr",
+                "metrics_path": "../.models/svr",
+                "params": {},
+                "cv_params": {
+                    "param_grid": {
+                        "kernel": [
+                            "linear",
+                            "poly",
+                            "rbf",
+                            "sigmoid"
+                        ],
+                        "degree": [
+                            3,
+                            4,
+                            5
+                        ],
+                        "C": [
+                            0.5,
+                            0.75,
+                            1,
+                            1.5
+                        ],
+                        "max_iter": [
+                            1000
+                        ]
+                    }
                 }
             }
         }

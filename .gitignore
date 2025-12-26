@@ -3,6 +3,12 @@
 !.datasets/datasets.json
 !.datasets/download_datasets.py
 
+#### ML related data
+
+### Models
+
+.models/*
+
 #### Python ignores
 
 # Byte-compiled / optimized / DLL files
