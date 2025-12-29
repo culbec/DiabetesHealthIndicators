@@ -1,22 +1,22 @@
 import json
-import pandas as pd
 import pathlib
 import numpy as np
+import pandas as pd
 import skops.io as sio
 
 from sklearn.model_selection import GridSearchCV
 
 import dhi.constants as dconst
-from dhi.decorators import time_func
 from dhi.utils import get_logger
+from dhi.decorators import time_func
 from dhi.ml.scorer import Scorer
 
-
+# TODO: move location to some folder like experiments
 class ModelWrapper(object):
     def __init__(self, **kwargs) -> None:
-        self.init(**kwargs)
+        self.init_from_kwargs(**kwargs)
 
-    def init(self, **kwargs) -> None:
+    def init_from_kwargs(self, **kwargs) -> None:
         self.model_name = kwargs.get("model_name", None)
         assert isinstance(self.model_name, str), "model_name must be a string"
         assert (
