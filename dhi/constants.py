@@ -3,9 +3,11 @@ import pathlib
 import numpy as np
 
 from sklearn.base import BaseEstimator
-from sklearn.svm import SVR
 from sklearn.ensemble import RandomForestClassifier
 from typing import Any, Type
+
+from sklearn.svm import SVR
+from dhi.ml.svr.svr import SVR_ as SVR_SCRATCH
 
 # TODO: find a better way to separate constants on module level? maybe using init files per submodule?
 ##############################
@@ -112,5 +114,6 @@ DHI_COMPONENT_REDUCTION_DEFAULT_N_COMPONENTS: int = 2
 # "model_name": (model_class, task_type)
 DHI_ML_MODEL_MAPPING: dict[str, tuple[Type[BaseEstimator], str]] = {
     "svr": (SVR, "regression"),
+    "svr_scratch": (SVR_SCRATCH, "regression"),
     "rfc": (RandomForestClassifier, "classification"),
 }

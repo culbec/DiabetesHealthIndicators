@@ -4,6 +4,8 @@ import numpy as np
 import pandas as pd
 import skops.io as sio
 
+from copy import deepcopy
+
 from sklearn.model_selection import GridSearchCV
 
 import dhi.constants as dconst
@@ -42,7 +44,7 @@ class ModelWrapper(object):
         self.params = kwargs.get("params", {})
         assert isinstance(self.params, dict), "params must be a dictionary"
 
-        self.cv_params = kwargs.get("cv_params", {})
+        self.cv_params = deepcopy(kwargs.get("cv_params", {}))
         assert isinstance(self.cv_params, dict), "cv_params must be a dictionary"
         
         self.param_grid = self.cv_params.pop("param_grid", {})
@@ -96,6 +98,7 @@ class ModelWrapper(object):
                 f"Fitting {self.model_name} on data with shape {X.shape} and target with shape {y.shape} without cross-validation"
             )
             self.model.fit(X, y)
+            self.logger.info(f"Fitted model: {self.model}")
 
         self._save_model()
 
