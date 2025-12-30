@@ -7,7 +7,7 @@ from sklearn.exceptions import NotFittedError
 from sklearn.base import BaseEstimator, ClassifierMixin
 
 from dhi.models.random_forest.tree.tree import Tree
-from dhi.models.random_forest.sampling.bagging import BaggingSampler
+from dhi.models.random_forest.sampling.bagging import BootstrapSampler
 
 
 @dataclass
@@ -101,7 +101,7 @@ class RandomForest(BaseEstimator, ClassifierMixin):
         self.classes_ = np.array([0, 1], dtype=int) # or use the more generic classes variable, computed using np.unique
         self.n_classes_ = 2
 
-        self.sampler_ = BaggingSampler(
+        self.sampler_ = BootstrapSampler(
             data=X,
             labels=y_col.astype(int),
             n_bags=self.n_trees,
@@ -153,18 +153,7 @@ class RandomForest(BaseEstimator, ClassifierMixin):
                 f"X has {X.shape[1]} features, but this model was fitted with {self.n_features_in_} features")
 
         p1 = np.array([self._p1_one(X[i]) for i in range(X.shape[0])], dtype=float)
-        return np.column_stack([1.0 - p1, p1])
-
-    def _p1_one(self, x: np.ndarray) -> float:
-        """
-        Return the forest-averaged probability P(y=1|x) for a single sample.
-        Aggregation is done by averaging the per-tree predicted probabilities.
-        """
-        p1_sum = 0.0
-        for cls, prob in (tb.predict_one(x) for tb in self.trees_):
-            prob = float(prob)
-            p1_sum += prob if cls == 1 else (1.0 - prob)
-        return p1_sum / len(self.trees_)
+        return np.column_stack([1.0 - p1, p1]) # returns probabilities for classes [0, 1]
 
     def _predict_one(self, x: np.ndarray) -> Tuple[int, float]:
         if self.vote == "hard":
@@ -186,6 +175,17 @@ class RandomForest(BaseEstimator, ClassifierMixin):
         pred = 1 if p1 >= self.threshold else 0
         confidence = p1 if pred == 1 else (1.0 - p1)
         return pred, confidence
+
+    def _p1_one(self, x: np.ndarray) -> float:
+        """
+        Return the forest-averaged probability P(y=1|x) for a single sample.
+        Aggregation is done by averaging the per-tree predicted probabilities.
+        """
+        p1_sum = 0.0
+        for cls, prob in (tb.predict_one(x) for tb in self.trees_):
+            prob = float(prob)
+            p1_sum += prob if cls == 1 else (1.0 - prob)
+        return p1_sum / len(self.trees_)
 
     def _check_fitted(self):
         if not hasattr(self, "trees_") or self.trees_ is None or len(self.trees_) == 0:

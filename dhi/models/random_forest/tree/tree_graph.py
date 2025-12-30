@@ -17,7 +17,7 @@ def build_graph(tree: Tree, filename: str, path: str, view: bool = True):
                     format='png',
                     node_attr=node_attr)
 
-    _traverse_tree(graph, tree.head)
+    _traverse_tree(graph, tree.root)
 
     if view:
         graph.view()

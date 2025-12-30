@@ -4,11 +4,17 @@ from typing import Tuple
 from .node import Node
 
 class Tree:
+    """
+    Decision Tree implementation using binary splits for classification tasks.
+
+    Supports both binary and multi-class classification.
+    Designed as a base weak estimator for ensemble methods like Random Forest.
+    """
     def __init__(self,
                  max_depth: int = 10,
                  min_samples_split: int = 5,
                  min_samples_leaf: int = 3):
-        self.head = None
+        self.root = None
         self.is_trained = False
         self.max_depth = max_depth
         self.min_samples_split = min_samples_split
@@ -18,7 +24,7 @@ class Tree:
         assert x.shape[0] == y.shape[0], "Number of samples in training data and labels must be the same"
         assert y.shape[1] == 1, "Labels array must be of shape (n_samples, 1)"
 
-        self.head = Node(data=x,
+        self.root = Node(data=x,
                          labels=y,
                          max_depth=self.max_depth,
                          min_samples_split=self.min_samples_split,
@@ -31,7 +37,7 @@ class Tree:
         return self._get_node_prediction(x)
 
     def _get_node_prediction(self, x: np.ndarray) -> Tuple[int, float]:
-        current = self.head
+        current = self.root
         while not current.is_leaf:
             if x[current.split_dim] <= current.split_threshold:
                 current = current.left

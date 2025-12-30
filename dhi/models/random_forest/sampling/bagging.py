@@ -11,7 +11,16 @@ class _Bag:
     oob_indices: Optional[np.ndarray] = None
 
 
-class BaggingSampler:
+class BootstrapSampler:
+    """
+    Implementation of sampler performing bootstrap sampling with random feature selection,
+    used for the Bootstrap Aggregating (Bagging) technique in Random Forest ensemble model.
+
+    Creates multiple bags through:
+    - Bootstrap sampling of data rows (with replacement)
+    - Random feature subspace selection
+    - Optional out-of-bag (OOB) sample tracking
+    """
     def __init__(self,
                  data: np.ndarray,
                  labels: np.ndarray,
@@ -24,7 +33,7 @@ class BaggingSampler:
         data = np.asarray(data)
         labels = np.asarray(labels)
 
-        assert data.ndim == 2, "Data must be a 2D array"
+        assert data.ndim == 2, "Data must be a 2D array (n_samples, n_features)"
         assert labels.shape[0] == data.shape[0], "Number of samples in data and labels must be the same"
 
         self.data = data

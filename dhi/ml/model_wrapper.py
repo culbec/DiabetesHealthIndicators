@@ -12,6 +12,7 @@ from dhi.decorators import time_func
 from dhi.ml.scorer import Scorer
 
 # TODO: move location to some folder like experiments
+# TODO: implement cross-validation and hyperparameter optimization from scratch
 class ModelWrapper(object):
     def __init__(self, **kwargs) -> None:
         self.init_from_kwargs(**kwargs)
