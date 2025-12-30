@@ -1,3 +1,5 @@
+# Partial credits to: https://github.com/Eric-D-Stevens/Random_Forest_From_Scratch
+
 import numpy as np
 
 from collections import Counter
@@ -22,10 +24,12 @@ class BootstrappedTree:
                        features: np.ndarray,
                        max_depth: int,
                        min_samples_split: int,
-                       min_samples_leaf: int) -> 'BootstrappedTree':
+                       min_samples_leaf: int,
+                       impurity_metric: str) -> 'BootstrappedTree':
         tree = Tree(max_depth=max_depth,
                     min_samples_split=min_samples_split,
-                    min_samples_leaf=min_samples_leaf)
+                    min_samples_leaf=min_samples_leaf,
+                    impurity_metric=impurity_metric)
         tree.fit(x_bag, y_bag)
         return cls(features=features, tree=tree)
 
@@ -35,7 +39,7 @@ class BootstrappedTree:
         return self.tree.predict(x_sub)
 
 
-class RandomForest(BaseEstimator, ClassifierMixin):
+class RandomForest_(BaseEstimator, ClassifierMixin):
     """
     RandomForest binary classifier implementation compatible with Sklearn API.
 
@@ -47,17 +51,17 @@ class RandomForest(BaseEstimator, ClassifierMixin):
 
     def __init__(self,
                  n_trees: int,
-                 max_features: int,
-                 bootstrap_features: bool,
-                 max_depth: int,
-                 min_samples_split: int,
-                 min_samples_leaf: int,
+                 max_depth: int = 10,
+                 min_samples_split: int = 5,
+                 min_samples_leaf: int = 3,
                  vote: str = "hard",
+                 impurity_metric: str = "gini",
                  threshold: float = 0.5,
+                 bootstrap_features: bool = False,
                  seed: Optional[int] = None):
-        # TODO: add default values to all hyperparameters?
+        # TODO: more robust pre-pruning technique like chi-square test instead of min samples split?
+        # TODO: post-pruning technique? theoretically unrequired for ensemble method like RF, but should be researched
         self.n_trees = n_trees
-        self.max_features = max_features
         self.bootstrap_features = bootstrap_features
 
         self.max_depth = max_depth
@@ -65,22 +69,25 @@ class RandomForest(BaseEstimator, ClassifierMixin):
         self.min_samples_leaf = min_samples_leaf
 
         self.vote = vote.lower()
+        self.impurity_metric = impurity_metric.lower()
         self.threshold = threshold
 
         self.seed = seed
 
         if self.vote not in {"hard", "soft"}:
             raise ValueError("vote must be 'hard' or 'soft'")
+        if self.impurity_metric not in {"gini", "entropy"}:
+            raise ValueError("impurity_metric must be 'gini' or 'entropy'")
         if not (0.0 <= self.threshold <= 1.0):
             raise ValueError("threshold must be between 0 and 1")
 
-    def fit(self, X: np.ndarray, y: np.ndarray) -> "RandomForest":
+    def fit(self, X: np.ndarray, y: np.ndarray) -> "RandomForest_":
         X = np.asarray(X)
         y = np.asarray(y)
 
         assert X.ndim == 2, "Input data must be a 2D array (n_samples, n_features)"
         self.n_features_in_ = X.shape[1]
-        # allow y to be passed as batched (n,1) or unbatched (n, ) input shape
+        # Allow y to be passed as batched (n,1) or unbatched (n, ) input shape
         if y.ndim == 2 and y.shape[1] == 1:
             y_1d = y[:, 0].astype(int)
             y_col = y.astype(int)
@@ -92,7 +99,7 @@ class RandomForest(BaseEstimator, ClassifierMixin):
 
         assert y_col.shape[0] == X.shape[0], "Number of samples in data and expected labels must be the same size"
 
-        # ensure only binary classification tasks are attempted
+        # Ensure only binary classification tasks are attempted
         classes = np.unique(y_1d)
         if set(classes.tolist()) != {0, 1}:
             raise ValueError(
@@ -105,7 +112,6 @@ class RandomForest(BaseEstimator, ClassifierMixin):
             data=X,
             labels=y_col.astype(int),
             n_bags=self.n_trees,
-            max_features=self.max_features,
             bootstrap_features=self.bootstrap_features,
             seed=self.seed,
             oob=False  # TODO: can be turned on later for certain performance evaluation experiments
@@ -121,7 +127,8 @@ class RandomForest(BaseEstimator, ClassifierMixin):
                     features=features,
                     max_depth=self.max_depth,
                     min_samples_split=self.min_samples_split,
-                    min_samples_leaf=self.min_samples_leaf
+                    min_samples_leaf=self.min_samples_leaf,
+                    impurity_metric=self.impurity_metric
                 )
             )
 
@@ -187,10 +194,10 @@ class RandomForest(BaseEstimator, ClassifierMixin):
             p1_sum += prob if cls == 1 else (1.0 - prob)
         return p1_sum / len(self.trees_)
 
-    def _check_fitted(self):
+    def _check_fitted(self) -> None:
         if not hasattr(self, "trees_") or self.trees_ is None or len(self.trees_) == 0:
-            raise NotFittedError("Estimator not fitted. "
-                                 "Call fit with appropriate input data before using this estimator.")
+            raise NotFittedError("This RandomForestClassifier_ instance is not fitted yet. "
+                                 "Call 'fit' with appropriate arguments before using this estimator.")
         if not hasattr(self, "n_features_in_") or not hasattr(self, "classes_"):
-            raise NotFittedError("Estimator not fitted and missing metadata. "
-                                 "Call fit with appropriate input data before using this estimator.")
+            raise NotFittedError("This RandomForestClassifier_ instance is not fitted yet. "
+                                 "Call 'fit' with appropriate arguments before using this estimator.")

@@ -1,6 +1,6 @@
 import pandas as pd
 
-import dhi.data.preprocessor.const as dppconst
+import dhi.data.preprocessing.const as dppconst
 from dhi.data.loader._base import reduce_memory_usage
 from dhi.decorators import time_func
 from dhi.utils import get_logger
@@ -42,7 +42,7 @@ class Preprocessor(object):
             isinstance(mapping, dict) for mapping in self.numerical_to_categorical_features.values()
         ), "all mapping values must be dictionaries"
 
-        # mapping {feature: scaler}
+        # Mapping {feature: scaler}
         self._numerical_scaling_data = {}
         self._categorical_encoding_data = {}
 

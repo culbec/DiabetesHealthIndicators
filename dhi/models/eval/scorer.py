@@ -1,8 +1,8 @@
 import pandas as pd
 import numpy as np
+from typing import Optional
 
 import sklearn.metrics as skm
-
 from sklearn.base import BaseEstimator
 
 from dhi.utils import get_logger
@@ -15,7 +15,7 @@ class Scorer(object):
         self.model = model
         self.task_type = task_type
 
-    def _regression_metrics(self, y_true: pd.Series, y_pred: pd.Series, y_proba: np.ndarray | None = None) -> dict[str, float | None]:
+    def _regression_metrics(self, y_true: pd.Series, y_pred: pd.Series) -> dict[str, float | None]:
         # Source: https://scikit-learn.org/stable/modules/model_evaluation.html#string-name-scorers
         metrics = {}
 
@@ -38,7 +38,7 @@ class Scorer(object):
 
         return metrics
 
-    def _classification_metrics(self, y_true: pd.Series, y_pred: pd.Series, y_proba: np.ndarray | None = None) -> dict[str, float | None]:
+    def _classification_metrics(self, y_true: pd.Series, y_pred: pd.Series, y_proba: Optional[np.ndarray] = None) -> dict[str, float | None]:
         # Source: https://scikit-learn.org/stable/modules/model_evaluation.html#string-name-scorers
         is_multi_class = len(np.unique(y_true)) > 2
 
@@ -61,9 +61,9 @@ class Scorer(object):
             "roc_auc": skm.roc_auc_score(y_true, y_proba) if y_proba is not None else None,
         }
 
-    def score(self, y_true: pd.Series, y_pred: pd.Series, y_proba: np.ndarray | None = None) -> dict[str, float]:
+    def score(self, y_true: pd.Series, y_pred: pd.Series, y_proba: Optional[np.ndarray] = None) -> dict[str, float]:
         if self.task_type == "regression":
-            return self._regression_metrics(y_true, y_pred, y_proba)
+            return self._regression_metrics(y_true, y_pred)
         elif self.task_type == "classification":
             return self._classification_metrics(y_true, y_pred, y_proba)
         else:

@@ -25,7 +25,6 @@ class BootstrapSampler:
                  data: np.ndarray,
                  labels: np.ndarray,
                  n_bags: int,
-                 max_features: int,
                  bootstrap_features: bool = False,
                  bag_size: Optional[int] = None,
                  seed: Optional[int] = None,
@@ -39,33 +38,31 @@ class BootstrapSampler:
         self.data = data
         self.labels = labels
         self.n_bags = n_bags
+
         self.num_features = data.shape[1]
-        self.max_features = max_features
-        self.bootstrap_features = bootstrap_features
+        self.bootstrap_features = bootstrap_features # should be kept as False for Random Forest standard implementation
+        self.max_features = np.sqrt(self.num_features).astype(int)
+
         self.seed = seed
         self.oob = oob
 
         self.n = data.shape[0]
         self.bag_size = bag_size if bag_size is not None else self.n
 
-        assert max_features >= 1, "max_features must be at least 1"
-        assert (self.num_features >= max_features) or self.bootstrap_features, \
-            "max_features cannot exceed the total number of features unless bootstrap_features is True"
         assert 1 <= self.bag_size <= self.n, "bag_size must be between 1 and the number of samples"
 
         self.rng = np.random.default_rng(self.seed)
 
-        self.bags = [self._make_bag() for _  in range(self.n_bags)]
+        self.bags = [self._make_bag() for _ in range(self.n_bags)]
 
     def _make_bag(self) -> _Bag:
-        # feature subspace
-        n_features = self.rng.integers(1, self.max_features + 1)
+        # Feature subspace
         features = self.rng.choice(
             self.num_features,
-            size=n_features,
+            size=self.max_features,
             replace=self.bootstrap_features
         )
-        # bootstrap rows
+        # Bootstrap rows
         indices = self.rng.choice(
             self.n,
             size=self.bag_size,

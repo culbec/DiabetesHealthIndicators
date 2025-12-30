@@ -14,21 +14,21 @@ class Node:
     def __init__(self,
                  data: np.ndarray,
                  labels: np.ndarray,
-                 impurity_metric: str = 'gini',
-                 depth: int = 0,
-                 max_depth: int = 10,
-                 min_samples_split: int = 5,
-                 min_samples_leaf: int = 3):
+                 max_depth: int,
+                 min_samples_split: int,
+                 min_samples_leaf: int,
+                 impurity_metric: str,
+                 depth: int = 0):
         """
         Initialize the node and recursively grow the tree by finding the best splits
 
         :param data: the samples from the original data points reaching this node, with shape (n_samples, n_features)
         :param labels: the associated classes for each data point
-        :param impurity_metric: 'gini' or 'entropy', metric used for deciding the best splits
-        :param depth: current depth of the node in the tree
         :param max_depth: regularization parameter, maximum allowed recursion depth of the tree
         :param min_samples_split: regularization parameter, minimum samples required at the node to attempt splitting further
         :param min_samples_leaf: regularization parameter, minimum samples required in each child after the split
+        :param impurity_metric: 'gini' or 'entropy', metric used for deciding the best splits
+        :param depth: current depth of the node in the tree, defaults to 0 for the root node
         """
         self.data = data
         self.labels = labels
@@ -56,7 +56,7 @@ class Node:
 
         self.impurity = compute_impurity(self.class_counts, self.impurity_metric)
 
-        # early stopping for node splitting if a node is already 100% pure (no need to instantiate node children)
+        # Early stopping for node splitting if a node is already 100% pure (no need to instantiate node children)
         if self.impurity == 0.0:
             self.is_leaf = True
             return
@@ -65,14 +65,14 @@ class Node:
             self.is_leaf = True
             return
 
-        # TODO: separate this training logic method call from the init?
+        # TODO: separate this training logic call from the init method?
         self.split_dim, self.split_threshold, self.split_cost = self._split_node() # grow the tree recursively
 
         if any(x is None for x in (self.left, self.right, self.split_dim, self.split_threshold)):
             self.is_leaf = True
 
     def _split_node(self):
-        # find the best dimension (feature) to split on,
+        # Find the best dimension (feature) to split on,
         # the threshold that will reduce the impurity the most on that dimension,
         # and the resulting impurity (split_cost) after the split
         split_dimension, split_threshold, split_cost = self._find_best_split()
@@ -81,7 +81,7 @@ class Node:
 
         self.split_threshold = split_threshold
         self.split_dim = split_dimension
-        # information gain achieved by the split, representing the reduction in impurity from parent to children (higher is better)
+        # Information gain achieved by the split, representing the reduction in impurity from parent to children (higher is better)
         self.gain = self.impurity - split_cost
 
         left_indices = np.argwhere(self.data[:, split_dimension] <= split_threshold)
@@ -101,7 +101,7 @@ class Node:
         return split_dimension, split_threshold, split_cost
 
     def _find_best_split(self):
-        # best weighted impurity after the split, as the average of child node impurities (lower is better)
+        # Best weighted impurity after the split, as the average of child node impurities (lower is better)
         best_split_cost = 1.
         best_threshold = None
         best_dimension = None

@@ -1,6 +1,6 @@
 import pandas as pd
 
-from dhi.data.preprocessor._base import Preprocessor
+from dhi.data.preprocessing._base import Preprocessor
 
 
 class DHIPreprocessor(Preprocessor):
