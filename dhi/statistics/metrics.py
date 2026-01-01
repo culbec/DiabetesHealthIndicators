@@ -1,1 +1,1 @@
-# TODO: Implement metrics for statistics: is this still needed?
+# TODO: Implement metrics for statistics (e.g., confidence intervals, hypothesis testing)
