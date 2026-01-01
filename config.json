@@ -82,6 +82,7 @@
         "ml": {
           "svr_sklearn": {
                 "model_name": "svr_sklearn",
+                "model_type": "sklearn",
                 "save_path": "../.models/svr_sklearn",
                 "metrics_path": "../.models/svr_sklearn",
                 "params": {},
@@ -110,6 +111,7 @@
             },
           "svr_scratch": {
                 "model_name": "svr_scratch",
+                "model_type": "scratch",
                 "save_path": "../.models/svr_scratch",
                 "metrics_path": "../.models/svr_scratch",
                 "params": {
@@ -164,6 +166,7 @@
             },
           "rf_scratch": {
             "model_name": "rf_scratch",
+            "model_type": "scratch",
             "save_path": "../.models/rf_scratch",
             "metrics_path": "../.models/rf_scratch",
             "params": {
@@ -192,6 +195,7 @@
           },
           "rf_sklearn": {
             "model_name": "rf_sklearn",
+            "model_type": "sklearn",
             "save_path": "../.models/rf_sklearn",
             "metrics_path": "../.models/rf_sklearn",
             "params": {

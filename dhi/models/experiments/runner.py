@@ -1,4 +1,5 @@
 import json
+import joblib
 import pathlib
 import numpy as np
 import pandas as pd
@@ -15,7 +16,7 @@ from dhi.decorators import time_func
 from dhi.models.eval.scorer import Scorer
 
 
-class ExperimentRunner(object):
+class ExperimentRunner:
     def __init__(self, **kwargs) -> None:
         self._init_from_kwargs(**kwargs)
 
@@ -23,16 +24,19 @@ class ExperimentRunner(object):
         self.model_name = kwargs.get("model_name", None)
         assert isinstance(self.model_name, str), "model_name must be a string"
         assert (
-            self.model_name in dconst.DHI_ML_MODEL_REGISTRY
+                self.model_name in dconst.DHI_ML_MODEL_REGISTRY
         ), f"model_name must be one of {list(dconst.DHI_ML_MODEL_REGISTRY.keys())}"
         model_cls, self.task_type = dconst.DHI_ML_MODEL_REGISTRY[self.model_name]
+
+        # TODO: review the use of this arg for different serialization behavior
+        self.model_type = kwargs.get("model_type", "sklearn").lower()
+        assert self.model_type in ("sklearn", "scratch"), "model_type must be either 'sklearn' or 'scratch'"
 
         self.save_path = kwargs.get("save_path", None)
         assert self.save_path is None or isinstance(self.save_path, (str, pathlib.Path)), "save_path must be a string or pathlib.Path"
         self.save_path = (
                 pathlib.Path(self.save_path) / f"{self.model_name}.pkl"
         ) if self.save_path is not None else None
-
 
         self.metrics_path = kwargs.get("metrics_path", None)
         assert self.metrics_path is None or isinstance(self.metrics_path, (str, pathlib.Path)), "metrics_path must be a string or pathlib.Path"
@@ -45,7 +49,7 @@ class ExperimentRunner(object):
 
         self.cv_params = deepcopy(kwargs.get("cv_params", {}))
         assert isinstance(self.cv_params, dict), "cv_params must be a dictionary"
-        
+
         self.param_grid = self.cv_params.pop("param_grid", {})
         assert isinstance(self.param_grid, dict), "param_grid must be a dictionary"
 
@@ -55,7 +59,8 @@ class ExperimentRunner(object):
         required_methods = ("fit", "predict")
         for method in required_methods:
             fn = getattr(self.model, method, None)
-            assert callable(fn), f"The model {self.model_name} must implement the method '{method}()'"
+            if not callable(fn):
+                raise TypeError(f"The model {self.model_name} must implement the method '{method}()'")
 
         self.logger = get_logger(self.model.__class__.__name__)
 
@@ -70,58 +75,15 @@ class ExperimentRunner(object):
             self.save_path.parent.mkdir(parents=True, exist_ok=True)
 
         try:
-            sio.dump(self.model, self.save_path)
+            if self.model_type == "sklearn":
+                sio.dump(self.model, self.save_path)
+            else:
+                joblib.dump(self.model, self.save_path)
             self.logger.info(f"Model saved to {self.save_path}")
         except Exception as e:
             self.logger.error(f"Failed to save model to {self.save_path}: {e}")
 
-    @time_func
-    def fit(self, X: pd.DataFrame, y: pd.Series, with_cv: bool = False) -> None:
-        """
-        Fits the instance model to the passed data.
-
-        The `with_cv` parameter indicates if the model should be fitted with cross-validation.
-
-        The cross-validation is performed using `GridSearchCV`, attempting to also
-        optimize the hyperparameters of the model.
-
-        :param pd.DataFrame X: The input data
-        :param pd.Series y: The target data
-        :param bool with_cv: Whether to perform cross-validation, defaults to False
-        """
-        # TODO: add custom CV and HPO support
-        if with_cv:
-            self.logger.info(
-                f"Fitting {self.model_name} on data with shape {X.shape} and target with shape {y.shape} with cross-validation"
-            )
-            self.logger.info(f"Performing cross-validation with params: {self.cv_params}\nand param_grid: {self.param_grid}")
-            
-            grid = GridSearchCV(self.model, self.param_grid, **self.cv_params)
-            grid.fit(X, y)
-
-            self.logger.info(f"Best estimator: {grid.best_estimator_}")
-            self.model = grid.best_estimator_
-        else:
-            self.logger.info(
-                f"Fitting {self.model_name} on data with shape {X.shape} and target with shape {y.shape} without cross-validation"
-            )
-            self.model.fit(X, y)
-            self.logger.info(f"Fitted model: {self.model}")
-
-        self._save_model()
-
-    @time_func
-    def predict(self, X: pd.DataFrame) -> np.ndarray:
-            return self.model.predict(X)
-
-    @time_func
-    def predict_proba(self, X: pd.DataFrame) -> Optional[np.ndarray]:
-        predict_proba = getattr(self.model, "predict_proba", None)
-        if callable(predict_proba):
-            return self.model.predict_proba(X)
-        else:
-            self.logger.warning(f"Model {self.model_name} is not compatible with expected method 'predict_proba'. Unable to perform prediction.")
-            return None
+    # TODO: add utility method to load trained model from path
 
     @time_func
     def score(self, X: pd.DataFrame, y: pd.Series) -> dict[str, float]:
@@ -148,3 +110,53 @@ class ExperimentRunner(object):
             self.logger.info(f"Evaluation metrics dumped to {self.metrics_path}")
 
         return metrics
+
+    @time_func
+    def fit(self, X: pd.DataFrame, y: pd.Series, with_cv: bool = False) -> None:
+        """
+        Fits the instance model to the passed data.
+
+        The `with_cv` parameter indicates if the model should be fitted with cross-validation.
+
+        The cross-validation is performed using `GridSearchCV`, attempting to also
+        optimize the hyperparameters of the model.
+
+        :param pd.DataFrame X: The input data
+        :param pd.Series y: The target data
+        :param bool with_cv: Whether to perform cross-validation, defaults to False
+        """
+        # TODO: add custom CV and HPO support
+        if with_cv:
+            self.logger.info(
+                f"Fitting {self.model_name} on data with shape {X.shape} and target with shape {y.shape} with cross-validation"
+            )
+            self.logger.info(
+                f"Performing cross-validation with params: {self.cv_params}\nand param_grid: {self.param_grid}")
+
+            grid = GridSearchCV(self.model, self.param_grid, **self.cv_params)
+            grid.fit(X, y)
+
+            self.logger.info(f"Best estimator: {grid.best_estimator_}")
+            self.model = grid.best_estimator_
+        else:
+            self.logger.info(
+                f"Fitting {self.model_name} on data with shape {X.shape} and target with shape {y.shape} without cross-validation"
+            )
+            self.model.fit(X, y)
+            self.logger.info(f"Fitted model: {self.model}")
+
+        self._save_model()
+
+    @time_func
+    def predict(self, X: pd.DataFrame) -> np.ndarray:
+        return self.model.predict(X)
+
+    @time_func
+    def predict_proba(self, X: pd.DataFrame) -> Optional[np.ndarray]:
+        predict_proba = getattr(self.model, "predict_proba", None)
+        if callable(predict_proba):
+            return self.model.predict_proba(X)
+        else:
+            self.logger.warning(
+                f"Model {self.model_name} is not compatible with expected method 'predict_proba'. Unable to perform prediction.")
+            return None
