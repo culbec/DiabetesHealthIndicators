@@ -5,11 +5,10 @@ import numpy as np
 
 from numpy.typing import ArrayLike
 from typing import Callable, Any
+
+from sklearn.exceptions import NotFittedError
 from sklearn.base import BaseEstimator, RegressorMixin
 
-##############################
-# SVR CONSTANTS
-##############################
 
 DHI_SVR_KERNEL_TYPES: list[str] = ["linear", "poly", "rbf", "sigmoid"]
 DHI_SVR_DEFAULT_KERNEL: str = "auto"
@@ -23,13 +22,13 @@ DHI_SVR_DEFAULT_DEGREE: int = 3
 DHI_SVR_DEFAULT_COEF0: float | None = None
 
 
-class SVR_ValidationException(Exception):
+class SVRValidationError(Exception):
     def __init__(self, message: str):
         self.message = message
         super().__init__(self.message)
 
 
-class SVR_KernelException(Exception):
+class SVRKernelError(Exception):
     def __init__(self, message: str):
         self.message = message
         super().__init__(self.message)
@@ -111,7 +110,7 @@ class SVR_(BaseEstimator, RegressorMixin):
         The indices of the support vectors.
     support_vectors_: ArrayLike
         The support vectors.
-    kernal_stats: dict[str, Any]
+    kernel_stats_: dict[str, Any]
         The statistics of the kernel matrix.
     passes_: int
         The number of passes of the SMO algorithm.
@@ -124,20 +123,20 @@ class SVR_(BaseEstimator, RegressorMixin):
     """
 
     def __init__(
-        self,
-        *,
-        C: float = DHI_SVR_DEFAULT_C,
-        kernel: str = DHI_SVR_DEFAULT_KERNEL,
-        gamma: float | None = DHI_SVR_DEFAULT_GAMMA,
-        degree: int = DHI_SVR_DEFAULT_DEGREE,
-        coef0: float | None = DHI_SVR_DEFAULT_COEF0,
-        epsilon: float = DHI_SVR_DEFAULT_EPSILON,
-        tol: float = DHI_SVR_DEFAULT_TOL,
-        max_iter: int = DHI_SVR_DEFAULT_MAX_ITER,
-        max_passes: int = DHI_SVR_DEFAULT_MAX_PASSES,
-        cache_kernel: bool = True,
-        random_state: int | None = None,
-        verbose: bool = False,
+            self,
+            *,
+            C: float = DHI_SVR_DEFAULT_C,
+            kernel: str = DHI_SVR_DEFAULT_KERNEL,
+            gamma: float | None = DHI_SVR_DEFAULT_GAMMA,
+            degree: int = DHI_SVR_DEFAULT_DEGREE,
+            coef0: float | None = DHI_SVR_DEFAULT_COEF0,
+            epsilon: float = DHI_SVR_DEFAULT_EPSILON,
+            tol: float = DHI_SVR_DEFAULT_TOL,
+            max_iter: int = DHI_SVR_DEFAULT_MAX_ITER,
+            max_passes: int = DHI_SVR_DEFAULT_MAX_PASSES,
+            cache_kernel: bool = True,
+            random_state: int | None = None,
+            verbose: bool = False,
     ):
         super().__init__()
 
@@ -184,7 +183,7 @@ class SVR_(BaseEstimator, RegressorMixin):
 
         self.support_: ArrayLike = None
         self.support_vectors_: ArrayLike = None
-        
+
         self.kernel_stats_: dict[str, Any] = None
         self.passes_: int = None
         self.iters_: int = None
@@ -198,14 +197,14 @@ class SVR_(BaseEstimator, RegressorMixin):
         :return dict: The object's state without the logger
         """
         state = self.__dict__.copy()
-        # Remove logger if it exists (it contains RLock which can't be serialized)
+        # Remove logger if it exists (it contains an RLock which cannot be serialized)
         if "logger" in state:
             del state["logger"]
         return state
 
     def __setstate__(self, state: dict) -> None:
         """
-        Restores the object's state and reinitializes the logger after deserialization.
+        Restores the object's state and re-initializes the logger after deserialization.
 
         :param dict state: The object's state
         """
@@ -240,11 +239,11 @@ class SVR_(BaseEstimator, RegressorMixin):
         Resolves the kernel function according to the kernel type.
 
         :return Callable: The resolved kernel function
-        :raises SVR_KernelException: If the kernel type is invalid
+        :raises SVRKernelError: If the kernel type is invalid
         """
         # Resolve coef0 to 0.0 if None (required for poly and sigmoid kernels)
         self.coef0_ = self.coef0 if self.coef0 is not None else 0.0
-        if not hasattr(self, "gamma_"):
+        if self.gamma_ is None:
             self.gamma_ = self._resolve_gamma(self.X_)
 
         self.degree_ = self.degree
@@ -273,7 +272,7 @@ class SVR_(BaseEstimator, RegressorMixin):
                 self.degree_ = DHI_SVR_DEFAULT_DEGREE
                 return lambda x, y: np.tanh(self.gamma_ * np.dot(x, y) + self.coef0_)
             case _:
-                raise SVR_KernelException(f"Invalid kernel type: {self.kernel}")
+                raise SVRKernelError(f"Invalid kernel type: {self.kernel}")
 
     def _validate_data(self, X: ArrayLike, y: ArrayLike) -> bool:
         """
@@ -310,7 +309,7 @@ class SVR_(BaseEstimator, RegressorMixin):
         :param ArrayLike B: The second input data
         :return np.ndarray: The kernel matrix
         """
-        if not hasattr(self, "kernel_func_"):
+        if self.kernel_func_ is None:
             self.kernel_func_ = self._resolve_kernel_func()
 
         A_, B_ = np.asarray(A, dtype=float), np.asarray(B, dtype=float)
@@ -342,7 +341,7 @@ class SVR_(BaseEstimator, RegressorMixin):
         :param int idx: The index
         :return float: The output of the current model
         """
-        beta = self.a_[: self.n_samples_] - self.a_[self.n_samples_ :]
+        beta = self.a_[: self.n_samples_] - self.a_[self.n_samples_:]
         if self.kernel_matrix_ is not None:
             return float(beta @ self.kernel_matrix_[:, idx] + self.b_)
 
@@ -367,9 +366,9 @@ class SVR_(BaseEstimator, RegressorMixin):
 
         if self.kernel_matrix_ is not None:
             self.errors_ += (
-                sign_i * delta_ai * self.kernel_matrix_[:, ii]
-                + sign_j * delta_aj * self.kernel_matrix_[:, ij]
-                + delta_b
+                    sign_i * delta_ai * self.kernel_matrix_[:, ii]
+                    + sign_j * delta_aj * self.kernel_matrix_[:, ij]
+                    + delta_b
             )
             return
 
@@ -661,17 +660,26 @@ class SVR_(BaseEstimator, RegressorMixin):
         self.logger.info(f"SMO algorithm OK steps: {ok_steps}, fail steps: {fail_steps}")
 
         if self.kernel_matrix_ is not None:
-            beta = self.a_[: self.n_samples_] - self.a_[self.n_samples_ :]
+            beta = self.a_[: self.n_samples_] - self.a_[self.n_samples_:]
             f = beta @ self.kernel_matrix_ + self.b_
             self.errors_ = f - self.y_
         else:
             for i in range(self.n_samples_):
                 self.errors_[i] = self._output_for_index(i) - self.y_[i]
-                
+
         self.passes_ = passes
         self.iters_ = iters
         self.ok_steps_ = ok_steps
         self.fail_steps_ = fail_steps
+
+    def _check_fitted(self) -> None:
+        """
+        Checks if the model is fitted for safe usage before prediction.
+
+        :raises NotFittedError: If the model is not fitted
+        """
+        if self.X_ is None or self.dual_coef_ is None or self.b_ is None:
+            raise NotFittedError("This SVR_ instance is not fitted yet. Call 'fit' with appropriate arguments before using this estimator.")
 
     def fit(self, X: ArrayLike, y: ArrayLike) -> "SVR_":
         """
@@ -682,7 +690,7 @@ class SVR_(BaseEstimator, RegressorMixin):
         :return SVR_: The fitted SVR model
         """
         if not self._validate_data(X, y):
-            raise SVR_ValidationException("Provided data cannot be fed to the SVR model")
+            raise SVRValidationError("Provided data cannot be fed to the SVR model")
 
         X, y = np.asarray(X, dtype=float), np.asarray(y, dtype=float).ravel()
         self.X_, self.y_ = X, y
@@ -703,7 +711,7 @@ class SVR_(BaseEstimator, RegressorMixin):
 
         # The sign vector: its purpose is to map the sign of the dual variables to the corresponding side of the error tube
         self.sign_ = np.ones(2 * self.n_samples_, dtype=float)
-        self.sign_[self.n_samples_ :] = -1.0
+        self.sign_[self.n_samples_:] = -1.0
 
         # The bias term
         self.b_ = 0.0
@@ -728,13 +736,13 @@ class SVR_(BaseEstimator, RegressorMixin):
                 self.a_[i] = 0.0
                 self.a_[i + self.n_samples_] = 0.0
 
-        self.alpha_, self.alpha_star_ = self.a_[: self.n_samples_].copy(), self.a_[self.n_samples_ :].copy()
+        self.alpha_, self.alpha_star_ = self.a_[: self.n_samples_].copy(), self.a_[self.n_samples_:].copy()
         self.dual_coef_ = self.alpha_ - self.alpha_star_
 
         # Counting the support vectors as the most closer ones to the error tube
         self.support_ = np.where(np.abs(self.dual_coef_) > self.epsilon)[0]
         self.support_vectors_ = self.X_[self.support_]
-        
+
         # Kernel stats
         self.kernel_stats_ = {}
         if self.kernel_matrix_ is not None:
@@ -756,11 +764,13 @@ class SVR_(BaseEstimator, RegressorMixin):
         :param ArrayLike X: The input data
         :return np.ndarray: The predicted output
         """
+        self._check_fitted()
+
         X = np.asarray(X, dtype=float)
         if X.ndim != 2:
-            raise SVR_ValidationException("X must be a 2D array")
+            raise SVRValidationError("X must be a 2D array")
         if X.shape[1] != self.n_features_in_:
-            raise SVR_ValidationException(f"X must have {self.n_features_in_} features")
+            raise SVRValidationError(f"X must have {self.n_features_in_} features")
 
         K = self._compute_kernel_matrix(X, self.X_)
         return K @ self.dual_coef_ + self.b_

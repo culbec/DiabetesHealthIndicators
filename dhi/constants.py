@@ -2,13 +2,16 @@ import logging
 import pathlib
 import numpy as np
 
-from sklearn.base import BaseEstimator
-from sklearn.ensemble import RandomForestClassifier
 from typing import Any, Type
+from sklearn.base import BaseEstimator
 
 from sklearn.svm import SVR
-from dhi.ml.svr.svr import SVR_ as SVR_SCRATCH
+from dhi.models.svr import SVR_ as SVR_SCRATCH
 
+from sklearn.ensemble import RandomForestClassifier as RF
+from dhi.models.random_forest import RandomForest_ as RF_SCRATCH
+
+# TODO: find a better way to separate constants on module level? maybe using init files per submodule?
 ##############################
 # GENERAL CONSTANTS
 ##############################
@@ -110,9 +113,14 @@ DHI_COMPONENT_REDUCTION_DEFAULT_N_COMPONENTS: int = 2
 # ML CONSTANTS
 ##############################
 
+# TODO: rename to model registry and move to separate registry.py file
+# TODO: selection module with cross-validation (CV) from scratch, hyperparameter optimization (HPO), splitters, etc.
+# TODO: scratch module and sklearn module with factory class to return configured sklearn baselines?
+
 # "model_name": (model_class, task_type)
-DHI_ML_MODEL_MAPPING: dict[str, tuple[Type[BaseEstimator], str]] = {
-    "svr": (SVR, "regression"),
+DHI_ML_MODEL_REGISTRY: dict[str, tuple[Type[BaseEstimator], str]] = {
+    "svr_sklearn": (SVR, "regression"),
     "svr_scratch": (SVR_SCRATCH, "regression"),
-    "rfc": (RandomForestClassifier, "classification"),
+    "rf_sklearn": (RF, "classification"),
+    "rf_scratch": (RF_SCRATCH, "classification"),
 }

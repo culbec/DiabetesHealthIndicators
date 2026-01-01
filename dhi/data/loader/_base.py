@@ -9,7 +9,7 @@ import dhi.constants as dconst
 from dhi.decorators import time_func
 from dhi.utils import get_filetype, get_logger
 
-
+# TODO: move in a separate common module
 @time_func
 def reduce_memory_usage(
     df: pd.DataFrame, logger: logging.Logger | None = None, memory_usage_unit: str = "MB"
@@ -67,7 +67,7 @@ def reduce_memory_usage(
 
 class Loader(object):
     def __init__(self, **kwargs) -> None:
-        self.init(**kwargs)
+        self._init_from_kwargs(**kwargs)
 
     def _process_dataset_path(self, dataset_path: Any) -> pathlib.Path:
         """
@@ -96,7 +96,7 @@ class Loader(object):
 
         return dataset_path
 
-    def init(self, **kwargs) -> None:
+    def _init_from_kwargs(self, **kwargs) -> None:
         self.logger = get_logger(self.__class__.__name__)
 
         # TODO: maybe add a more configurable config parser?
@@ -156,7 +156,7 @@ class Loader(object):
         Internal method used to load the dataset from its path,
         considering the filetype.
 
-        Fallsback to reading CSV if the filetype is not supported.
+        Falls back to reading CSV if the filetype is not supported.
 
         :return pd.DataFrame: The read dataset.
         """
