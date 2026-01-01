@@ -189,15 +189,15 @@ class RandomForest_(BaseEstimator, ClassifierMixin):
         Aggregation is done by averaging the per-tree predicted probabilities.
         """
         p1_sum = 0.0
-        for cls, prob in (tb.predict_one(x) for tb in self.trees_):
+        for label, prob in (tb.predict_one(x) for tb in self.trees_):
             prob = float(prob)
-            p1_sum += prob if cls == 1 else (1.0 - prob)
+            p1_sum += prob if label == 1 else (1.0 - prob)
         return p1_sum / len(self.trees_)
 
     def _check_fitted(self) -> None:
         if not hasattr(self, "trees_") or self.trees_ is None or len(self.trees_) == 0:
-            raise NotFittedError("This RandomForestClassifier_ instance is not fitted yet. "
+            raise NotFittedError("This RandomForest_ instance is not fitted yet. "
                                  "Call 'fit' with appropriate arguments before using this estimator.")
         if not hasattr(self, "n_features_in_") or not hasattr(self, "classes_"):
-            raise NotFittedError("This RandomForestClassifier_ instance is not fitted yet. "
+            raise NotFittedError("This RandomForest_ instance is not fitted yet. "
                                  "Call 'fit' with appropriate arguments before using this estimator.")

@@ -7,7 +7,7 @@ from .node import Node
 def build_graph(tree: Tree, filename: str, path: str, view: bool = True):
     node_attr = [
         ('shape', 'box'),
-        ('style', 'filled', 'rounded'),
+        ('style', 'filled,rounded'),
         ('fontname', 'helvetica')
     ];
 
@@ -72,8 +72,8 @@ def _format_node_label(node: Node):
     if samples is not None:
         lines.append(f"Samples: {samples}")
     if labels:
-        labels.append(f"Labels: {labels}")
-        counts.append(f"Counts: {counts}")
+        lines.append(f"Labels: {labels}")
+        lines.append(f"Counts: {counts}")
 
     if feat_index is not None and threshold is not None:
         lines.append(f"Split: X[{feat_index}] <= {threshold:.4f}")

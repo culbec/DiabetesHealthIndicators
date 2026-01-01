@@ -1,12 +1,13 @@
 import json
 import joblib
 import pathlib
+
 import numpy as np
-import pandas as pd
 import skops.io as sio
 
 from copy import deepcopy
 from typing import Optional
+from numpy.typing import ArrayLike
 
 from sklearn.model_selection import GridSearchCV
 
@@ -86,7 +87,7 @@ class ExperimentRunner:
     # TODO: add utility method to load trained model from path
 
     @time_func
-    def score(self, X: pd.DataFrame, y: pd.Series) -> dict[str, float]:
+    def score(self, X: ArrayLike, y: ArrayLike) -> dict[str, float]:
         y_pred, y_proba = self.predict(X), self.predict_proba(X)
 
         scorer = Scorer(self.model, self.task_type)
@@ -112,7 +113,7 @@ class ExperimentRunner:
         return metrics
 
     @time_func
-    def fit(self, X: pd.DataFrame, y: pd.Series, with_cv: bool = False) -> None:
+    def fit(self, X: ArrayLike, y: ArrayLike, with_cv: bool = False) -> None:
         """
         Fits the instance model to the passed data.
 
@@ -121,8 +122,8 @@ class ExperimentRunner:
         The cross-validation is performed using `GridSearchCV`, attempting to also
         optimize the hyperparameters of the model.
 
-        :param pd.DataFrame X: The input data
-        :param pd.Series y: The target data
+        :param ArrayLike X: The input data
+        :param ArrayLike y: The target data
         :param bool with_cv: Whether to perform cross-validation, defaults to False
         """
         # TODO: add custom CV and HPO support
@@ -148,11 +149,11 @@ class ExperimentRunner:
         self._save_model()
 
     @time_func
-    def predict(self, X: pd.DataFrame) -> np.ndarray:
+    def predict(self, X: ArrayLike) -> np.ndarray:
         return self.model.predict(X)
 
     @time_func
-    def predict_proba(self, X: pd.DataFrame) -> Optional[np.ndarray]:
+    def predict_proba(self, X: ArrayLike) -> Optional[np.ndarray]:
         predict_proba = getattr(self.model, "predict_proba", None)
         if callable(predict_proba):
             return self.model.predict_proba(X)
