@@ -197,7 +197,7 @@ class SVR_(BaseEstimator, RegressorMixin):
         :return dict: The object's state without the logger
         """
         state = self.__dict__.copy()
-        # Remove logger if it exists
+        # Remove logger if it exists (it contains an RLock which cannot be serialized)
         if "logger" in state:
             del state["logger"]
         return state
