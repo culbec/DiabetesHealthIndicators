@@ -13,13 +13,15 @@ from sklearn.base import BaseEstimator, RegressorMixin
 DHI_SVR_KERNEL_TYPES: list[str] = ["linear", "poly", "rbf", "sigmoid"]
 DHI_SVR_DEFAULT_KERNEL: str = "auto"
 DHI_SVR_DEFAULT_C: float = 1.0
-DHI_SVR_DEFAULT_EPSILON: float = 1e-3
+DHI_SVR_DEFAULT_EPSILON: float = 1e-1
 DHI_SVR_DEFAULT_TOL: float = 1e-3
 DHI_SVR_DEFAULT_MAX_ITER: int = 1000
 DHI_SVR_DEFAULT_MAX_PASSES: int = 50
 DHI_SVR_DEFAULT_GAMMA: float | None = None
 DHI_SVR_DEFAULT_DEGREE: int = 3
 DHI_SVR_DEFAULT_COEF0: float | None = None
+DHI_SVR_DEFAULT_SHRINKING: bool = True
+DHI_SVR_DEFAULT_SHRINKING_INTERVAL: int = 50
 
 
 class SVRValidationError(Exception):
@@ -37,7 +39,7 @@ class SVRKernelError(Exception):
 class SVR_(BaseEstimator, RegressorMixin):
     """
     Class implementing a Support Vector Machine for the regression task.
-    
+
     Maximizes the dual formulation of the SVM problem, relying on sample similarities,
     rather than explicit feature mappings from the primal formulation.
 
@@ -65,11 +67,15 @@ class SVR_(BaseEstimator, RegressorMixin):
         The maximum number of passes for the optimization algorithm.
     cache_kernel: bool
         Whether to cache the kernel matrix.
+    shrinking: bool
+        Whether to use a shrinking heuristic in SMO (working-set reduction; speed only).
+    shrinking_interval: int
+        How often (in SMO iterations) to apply the shrinking heuristic. Only used if shrinking=True.
     random_state: int | None
         The random state for the optimization algorithm.
     verbose: bool
         Whether to print verbose output.
-        
+
     Attributes
     ------------------------------
     X_: ArrayLike
@@ -120,23 +126,27 @@ class SVR_(BaseEstimator, RegressorMixin):
         The number of successful steps of the SMO algorithm.
     fail_steps_: int
         The number of failed steps of the SMO algorithm.
+    active_set_: ArrayLike
+        Boolean mask over dual variables used by the shrinking heuristic in SMO.
     """
 
     def __init__(
-            self,
-            *,
-            C: float = DHI_SVR_DEFAULT_C,
-            kernel: str = DHI_SVR_DEFAULT_KERNEL,
-            gamma: float | None = DHI_SVR_DEFAULT_GAMMA,
-            degree: int = DHI_SVR_DEFAULT_DEGREE,
-            coef0: float | None = DHI_SVR_DEFAULT_COEF0,
-            epsilon: float = DHI_SVR_DEFAULT_EPSILON,
-            tol: float = DHI_SVR_DEFAULT_TOL,
-            max_iter: int = DHI_SVR_DEFAULT_MAX_ITER,
-            max_passes: int = DHI_SVR_DEFAULT_MAX_PASSES,
-            cache_kernel: bool = True,
-            random_state: int | None = None,
-            verbose: bool = False,
+        self,
+        *,
+        C: float = DHI_SVR_DEFAULT_C,
+        kernel: str = DHI_SVR_DEFAULT_KERNEL,
+        gamma: float | None = DHI_SVR_DEFAULT_GAMMA,
+        degree: int = DHI_SVR_DEFAULT_DEGREE,
+        coef0: float | None = DHI_SVR_DEFAULT_COEF0,
+        epsilon: float = DHI_SVR_DEFAULT_EPSILON,
+        tol: float = DHI_SVR_DEFAULT_TOL,
+        max_iter: int = DHI_SVR_DEFAULT_MAX_ITER,
+        max_passes: int = DHI_SVR_DEFAULT_MAX_PASSES,
+        cache_kernel: bool = True,
+        shrinking: bool = DHI_SVR_DEFAULT_SHRINKING,
+        shrinking_interval: int = DHI_SVR_DEFAULT_SHRINKING_INTERVAL,
+        random_state: int | None = None,
+        verbose: bool = False,
     ):
         super().__init__()
 
@@ -150,6 +160,8 @@ class SVR_(BaseEstimator, RegressorMixin):
         self.max_iter = max_iter
         self.max_passes = max_passes
         self.cache_kernel = cache_kernel
+        self.shrinking = shrinking
+        self.shrinking_interval = shrinking_interval
         self.random_state = random_state
         self.verbose = verbose
 
@@ -189,6 +201,7 @@ class SVR_(BaseEstimator, RegressorMixin):
         self.iters_: int = None
         self.ok_steps_: int = None
         self.fail_steps_: int = None
+        self.active_set_: ArrayLike = None
 
     def __getstate__(self) -> dict:
         """
@@ -200,6 +213,10 @@ class SVR_(BaseEstimator, RegressorMixin):
         # Remove logger if it exists (it contains an RLock which cannot be serialized)
         if "logger" in state:
             del state["logger"]
+        # Do not serialize lambda-based kernel functions (not picklable).
+        # It can be re-created from (kernel, gamma_, degree_, coef0_) after deserialization.
+        if "kernel_func_" in state:
+            del state["kernel_func_"]
         return state
 
     def __setstate__(self, state: dict) -> None:
@@ -213,6 +230,9 @@ class SVR_(BaseEstimator, RegressorMixin):
         from dhi.utils import get_logger
 
         self.logger = get_logger(self.__class__.__name__, level=logging.DEBUG if self.verbose else logging.INFO)
+        # Ensure kernel function is reconstructed lazily on first use.
+        # (It was intentionally excluded from pickling because it may be a lambda.)
+        self.kernel_func_ = None
 
     def _resolve_gamma(self, X: ArrayLike) -> float:
         """
@@ -341,7 +361,7 @@ class SVR_(BaseEstimator, RegressorMixin):
         :param int idx: The index
         :return float: The output of the current model
         """
-        beta = self.a_[: self.n_samples_] - self.a_[self.n_samples_:]
+        beta = self.a_[: self.n_samples_] - self.a_[self.n_samples_ :]
         if self.kernel_matrix_ is not None:
             return float(beta @ self.kernel_matrix_[:, idx] + self.b_)
 
@@ -366,9 +386,9 @@ class SVR_(BaseEstimator, RegressorMixin):
 
         if self.kernel_matrix_ is not None:
             self.errors_ += (
-                    sign_i * delta_ai * self.kernel_matrix_[:, ii]
-                    + sign_j * delta_aj * self.kernel_matrix_[:, ij]
-                    + delta_b
+                sign_i * delta_ai * self.kernel_matrix_[:, ii]
+                + sign_j * delta_aj * self.kernel_matrix_[:, ij]
+                + delta_b
             )
             return
 
@@ -379,32 +399,47 @@ class SVR_(BaseEstimator, RegressorMixin):
 
     def _phi(self, idx: int) -> float:
         """
-        Computes the phi function for the given index.
+        Computes the gradient (phi) for the dual variable at the given index.
 
-        :param int idx: The index
-        :return float: The phi function
+        For epsilon-SVR dual maximization, the gradients are:
+          - For alpha_i:      dL/d(alpha_i)      = -err_i - epsilon
+          - For alpha_star_i: dL/d(alpha_star_i) = err_i - epsilon
+        where err = f(x) - y is the prediction error.
+
+        :param int idx: The index (0..n-1 for alpha, n..2n-1 for alpha_star)
+        :return float: The gradient value
         """
         sample_idx = idx if idx < self.n_samples_ else idx - self.n_samples_
-
-        # Computing the error with respect to the epsilon-insensitive loss function and the side of the error tube
         err = self.errors_[sample_idx]
+
         if idx < self.n_samples_:
+            return float(-err - self.epsilon)
+        else:
             return float(err - self.epsilon)
-        return float(err + self.epsilon)
 
     def _violates_kkt_for_index(self, idx: int) -> bool:
         """
         Checks if the KKT conditions are violated for the given index.
 
+        For epsilon-SVR dual maximization, KKT conditions at optimum are:
+          - If alpha < C: gradient <= 0 (otherwise we could increase alpha)
+          - If alpha > 0: gradient >= 0 (otherwise we could decrease alpha)
+
+        A violation occurs when:
+          - alpha < C and gradient > tol (should increase)
+          - alpha > 0 and gradient < -tol (should decrease)
+
         :param int idx: The index
         :return bool: Whether the KKT conditions are violated or not
         """
-        phi = self.phi_cache_[idx]
+        gradient = self.phi_cache_[idx]
         alpha = self.a_[idx]
 
-        if alpha < self.C - np.finfo(float).eps and phi < -self.tol:
+        # Violation: can increase (low alpha, positive gradient)
+        if alpha < self.C - np.finfo(float).eps and gradient > self.tol:
             return True
-        if alpha > np.finfo(float).eps and phi > self.tol:
+        # Violation: can decrease (high alpha, negative gradient)
+        if alpha > np.finfo(float).eps and gradient < -self.tol:
             return True
         return False
 
@@ -413,19 +448,29 @@ class SVR_(BaseEstimator, RegressorMixin):
         Selects the first index to be optimized by the SMO algorithm,
         one that violates the KKT conditions.
 
+        For epsilon-SVR dual maximization:
+          - Low alpha (< C) with positive gradient can increase (violation)
+          - High alpha (> 0) with negative gradient can decrease (violation)
+
         :param np.random.Generator rng: The random number generator
         :param set[int] | None ignore_indices: Indices to ignore
         :return int | None: The selected index, or None if no index is found
         """
         alpha = self.a_
-        phi = self.phi_cache_ * self.sign_
+        gradient = self.phi_cache_
 
         mask_low = alpha < (self.C - np.finfo(float).eps)
         mask_high = alpha > (np.finfo(float).eps)
 
-        viol = np.zeros_like(phi)
-        viol[mask_low] = np.maximum(0.0, -phi[mask_low])
-        viol[mask_high] = np.maximum(0.0, phi[mask_high])
+        viol = np.zeros_like(gradient)
+        # Low alpha with positive gradient: can increase (violation magnitude = gradient)
+        viol[mask_low] = np.maximum(0.0, gradient[mask_low])
+        # High alpha with negative gradient: can decrease (violation magnitude = -gradient)
+        viol[mask_high] = np.maximum(0.0, -gradient[mask_high])
+
+        # Shrinking heuristic: ignore indices that are very unlikely to violate KKT conditions.
+        if self.shrinking and (self.active_set_ is not None):
+            viol[~self.active_set_] = 0.0
 
         # Ignoring indices by setting their violation to 0
         if ignore_indices:
@@ -437,27 +482,81 @@ class SVR_(BaseEstimator, RegressorMixin):
 
         return int(np.argmax(viol))
 
+    def _apply_shrinking(self) -> None:
+        """
+        Applies the SMO shrinking heuristic (working-set reduction).
+
+        It is safe to temporarily shrink variable i when it's at a bound and the gradient
+        is pushing it deeper into that bound (not causing a KKT violation):
+          - alpha near 0 and gradient <= 0
+          - alpha near C and gradient >= 0
+        """
+        if (not self.shrinking) or (self.active_set_ is None):
+            return
+
+        bound_eps = max(float(self.tol), float(np.finfo(float).eps))
+
+        for i in range(2 * self.n_samples_):
+            if not bool(self.active_set_[i]):
+                continue
+
+            alpha = float(self.a_[i])
+            gradient = float(self.phi_cache_[i])
+
+            if alpha <= bound_eps and gradient <= 0.0:
+                self.active_set_[i] = False
+            elif alpha >= float(self.C) - bound_eps and gradient >= 0.0:
+                self.active_set_[i] = False
+
     def _select_second_index(self, idx: int) -> int | None:
         """
         Selects the second index to be optimized by the SMO algorithm.
 
-        The second index is selected according to the passed first index.
-        Pairs variables from opposite sides of the error tube (alpha with alpha_star).
-
-        This forms the dual problem, optimizing two variables at a time.
+        For epsilon-SVR SMO, we pair variables with opposite signs from different samples.
+        Same-sample pairs do not work because their gradients always sum to -2*epsilon.
 
         :param int idx: The first index to be optimized
         :return int | None: The selected index, or None if no index is found
         """
-        phi_idx = self.phi_cache_[idx]
+        sign_idx = self.sign_[idx]
+        gradient_idx = self.phi_cache_[idx]
 
-        # Choosing indices on the opposite side of the error tube
-        if phi_idx > 0:
-            best_second = int(np.argmin(self.phi_cache_))
+        # Build mask for opposite-sign indices from different samples
+        opposite_sign_mask = self.sign_ != sign_idx
+        opposite_sign_mask[idx] = False
+
+        # Exclude same-sample twin
+        if idx < self.n_samples_:
+            same_sample_twin = idx + self.n_samples_
         else:
-            best_second = int(np.argmax(self.phi_cache_))
+            same_sample_twin = idx - self.n_samples_
+        opposite_sign_mask[same_sample_twin] = False
 
-        # Cannot optimize if we have the same index
+        # Apply shrinking mask if active
+        if self.shrinking and (self.active_set_ is not None):
+            opposite_sign_mask = opposite_sign_mask & self.active_set_
+
+        if not np.any(opposite_sign_mask):
+            return None
+
+        # For opposite-sign pairs, the constraint forces both to move together,
+        # so pick a second index with gradient in the same direction.
+        gradients = self.phi_cache_
+        if gradient_idx > 0:
+            # First index wants to increase; pick second with largest positive gradient
+            masked = np.where(opposite_sign_mask, gradients, -np.inf)
+            best_second = int(np.argmax(masked))
+            # Only proceed if the best second also has positive gradient
+            if gradients[best_second] <= 0:
+                return None
+        else:
+            # First index wants to decrease; pick second with smallest (most negative) gradient
+            masked = np.where(opposite_sign_mask, gradients, np.inf)
+            best_second = int(np.argmin(masked))
+            # Only proceed if the best second also has negative gradient
+            if gradients[best_second] >= 0:
+                return None
+
         if best_second == idx:
             return None
 
@@ -486,102 +585,75 @@ class SVR_(BaseEstimator, RegressorMixin):
 
     def _take_step(self, idx_i: int, idx_j: int) -> bool:
         """
-        Takes a step in the direction of the gradient for the given index pair.
+        Takes a step in the direction of the gradient for a pair of dual variables.
+
+        For epsilon-SVR SMO, we pair variables with opposite signs to maintain
+        the equality constraint sum(alpha - alpha_star) = 0.
 
         :param int idx_i: The first index
         :param int idx_j: The second index
         :return bool: If progress was made in the optimization algorithm or not
         """
-        # False if we have the same indices
         if idx_i == idx_j:
             return False
 
         sign_i, sign_j = self.sign_[idx_i], self.sign_[idx_j]
 
-        # Ensuring we are within the box bounds
+        # Get sample indices
         ii = idx_i if idx_i < self.n_samples_ else idx_i - self.n_samples_
         ij = idx_j if idx_j < self.n_samples_ else idx_j - self.n_samples_
 
         alpha_i_old, alpha_j_old = self.a_[idx_i], self.a_[idx_j]
 
         W, H = self._bounds_for_index_pair(idx_i, idx_j)
-
         if H - W < np.finfo(float).eps:
             return False
-
-        phi_i, phi_j = self.phi_cache_[idx_i], self.phi_cache_[idx_j]
 
         Kii = self._K(ii, ii)
         Kjj = self._K(ij, ij)
         Kij = self._K(ii, ij)
 
-        # Computing the denominator of the step, avoiding division by zero
         eta = Kii + Kjj - 2 * Kij
-        # Scale by kernel magnitude to handle cases where kernel values are legitimately small
-        kernel_scale = max(abs(Kii), abs(Kjj), abs(Kij), 1.0)
-        # Use tolerance-scaled threshold relative to kernel scale, with machine epsilon as minimum
-        eta_threshold = max(self.tol * kernel_scale * 1e-6, np.finfo(float).eps)
-        if eta < eta_threshold:
+        if eta < np.finfo(float).eps:
             return False
 
-        # Use phi values for the step calculation, which account for epsilon
-        alpha_j_new = alpha_j_old + sign_j * (phi_i - phi_j) / eta
-        if alpha_j_new > H:
-            alpha_j_new = H
-        if alpha_j_new < W:
-            alpha_j_new = W
+        # SMO update depends on whether the pair has same or opposite signs
+        if sign_i * sign_j < 0:
+            alpha_j_new = alpha_j_old + (self.phi_cache_[idx_i] + self.phi_cache_[idx_j]) / eta
+        else:
+            alpha_j_new = alpha_j_old + (self.phi_cache_[idx_j] - self.phi_cache_[idx_i]) / eta
 
-        alpha_i_new = (sign_i * alpha_i_old + sign_j * alpha_j_old - sign_j * alpha_j_new) / sign_i
-
-        # The bounds [W, H] should ensure both alphas stay in [0, C], but check for numerical issues
-        # If alpha_i_new is out of bounds due to numerical errors, clip it and adjust alpha_j_new
-        if alpha_i_new < 0:
-            alpha_i_new = 0.0
-            alpha_j_new = (sign_i * alpha_i_old + sign_j * alpha_j_old - sign_i * alpha_i_new) / sign_j
-            alpha_j_new = max(W, min(H, alpha_j_new))
-        elif alpha_i_new > self.C:
-            alpha_i_new = self.C
-            alpha_j_new = (sign_i * alpha_i_old + sign_j * alpha_j_old - sign_i * alpha_i_new) / sign_j
-            alpha_j_new = max(W, min(H, alpha_j_new))
-
-        # Final bounds check, should not be necessary if bounds are correct
+        alpha_j_new = max(W, min(H, alpha_j_new))
+        alpha_i_new = alpha_i_old + sign_i * sign_j * (alpha_j_old - alpha_j_new)
         alpha_i_new = max(0.0, min(self.C, alpha_i_new))
-        alpha_j_new = max(0.0, min(self.C, alpha_j_new))
 
-        # Check if the change is significant
-        # Threshold should be relative to C and account for numerical precision
         change_i = abs(alpha_i_new - alpha_i_old)
         change_j = abs(alpha_j_new - alpha_j_old)
-        threshold = self.tol * max(1.0, self.C) * 1e-2
+        threshold = 1e-8
         if change_i < threshold and change_j < threshold:
             return False
 
         self.a_[idx_i] = alpha_i_new
         self.a_[idx_j] = alpha_j_new
 
-        delta_ai = alpha_i_new - alpha_i_old
-        delta_aj = alpha_j_new - alpha_j_old
+        delta_i = alpha_i_new - alpha_i_old
+        delta_j = alpha_j_new - alpha_j_old
 
-        # Biases for both indices
         b_old = self.b_
-        b1 = b_old - self.errors_[ii] - sign_i * delta_ai * Kii - sign_j * delta_aj * Kij
-        b2 = b_old - self.errors_[ij] - sign_i * delta_ai * Kij - sign_j * delta_aj * Kjj
-
-        # Determining which index is free to update the bias
         eps_bound = np.finfo(float).eps
-        i_free = (self.a_[idx_i] > eps_bound) and (self.a_[idx_i] < self.C - eps_bound)
-        j_free = (self.a_[idx_j] > eps_bound) and (self.a_[idx_j] < self.C - eps_bound)
+        i_free = (alpha_i_new > eps_bound) and (alpha_i_new < self.C - eps_bound)
+        j_free = (alpha_j_new > eps_bound) and (alpha_j_new < self.C - eps_bound)
 
+        # Update bias based on free support vectors
         if i_free:
-            self.b_ = b1
+            target_err = self.epsilon if idx_i < self.n_samples_ else -self.epsilon
+            self.b_ = b_old + target_err - self.errors_[ii] - sign_i * delta_i * Kii - sign_j * delta_j * Kij
         elif j_free:
-            self.b_ = b2
-        else:
-            self.b_ = (b1 + b2) / 2.0
+            target_err = self.epsilon if idx_j < self.n_samples_ else -self.epsilon
+            self.b_ = b_old + target_err - self.errors_[ij] - sign_i * delta_i * Kij - sign_j * delta_j * Kjj
 
         delta_b = self.b_ - b_old
-
-        self._update_error_cache(idx_i, idx_j, delta_ai, delta_aj, delta_b)
+        self._update_error_cache(idx_i, idx_j, delta_i, delta_j, delta_b)
 
         return True
 
@@ -601,6 +673,7 @@ class SVR_(BaseEstimator, RegressorMixin):
 
         iters, passes = 0, 0
         ok_steps, fail_steps = 0, 0
+        shrinking_interval = max(DHI_SVR_DEFAULT_SHRINKING_INTERVAL, int(self.shrinking_interval))
 
         # Keep track of indices that failed to produce a valid step
         # to prevent infinite loops on the same index
@@ -608,30 +681,53 @@ class SVR_(BaseEstimator, RegressorMixin):
 
         self.phi_cache_ = self._compute_phi_cache()
 
+        # Initialize shrinking active set
+        if self.shrinking:
+            self.active_set_ = np.ones(2 * self.n_samples_, dtype=bool)
+        else:
+            self.active_set_ = None
+
         while passes < self.max_passes and iters < self.max_iter:
+            # Unshrink near iteration limit to catch late violations
+            if self.shrinking and (self.active_set_ is not None) and (self.max_iter - iters <= shrinking_interval):
+                self.active_set_[:] = True
+
+            if self.shrinking and iters > 0 and (iters % shrinking_interval == 0):
+                self._apply_shrinking()
+
             i = self._select_first_index(rng, ignore_indices=failed_indices)
             if i is None:
+                # Before declaring convergence, unshrink and re-check all variables
+                if self.shrinking and (self.active_set_ is not None) and (not bool(np.all(self.active_set_))):
+                    self.active_set_[:] = True
+                    failed_indices.clear()
+                    self.phi_cache_ = self._compute_phi_cache()
+                    continue
+
                 self.logger.info("No optimizable KKT violations found, algorithm converged")
                 break
 
             j = self._select_second_index(i)
             if j is not None and self._take_step(i, j):
-                # OK step using the heuristic for choosing the second index
                 ok_steps += 1
                 passes = 0
                 failed_indices.clear()
                 iters += 1
                 self.phi_cache_ = self._compute_phi_cache()
+                if self.shrinking and (self.active_set_ is not None):
+                    self.active_set_[i] = True
+                    self.active_set_[j] = True
                 continue
 
-            # If the heuristic for choosing the second index fails,
-            # try to take a random step with any other index
+            # Try other indices if heuristic fails
             start_offset = rng.integers(0, 2 * self.n_samples_)
             found_step = False
 
             for k_offset in range(2 * self.n_samples_):
                 k = (start_offset + k_offset) % (2 * self.n_samples_)
                 if k == i:
+                    continue
+                if self.shrinking and (self.active_set_ is not None) and (not bool(self.active_set_[k])):
                     continue
 
                 if self._take_step(i, k):
@@ -646,11 +742,14 @@ class SVR_(BaseEstimator, RegressorMixin):
                 self.phi_cache_ = self._compute_phi_cache()
                 continue
 
-            # Failure if we have tried all other indices and still no step could be taken
             fail_steps += 1
             passes += 1
             failed_indices.add(i)
             iters += 1
+
+        if self.shrinking and (self.active_set_ is not None):
+            self.active_set_[:] = True
+            self.phi_cache_ = self._compute_phi_cache()
 
         if passes >= self.max_passes:
             self.logger.warning(f"SMO algorithm did not converge after {self.max_passes} passes")
@@ -660,7 +759,7 @@ class SVR_(BaseEstimator, RegressorMixin):
         self.logger.info(f"SMO algorithm OK steps: {ok_steps}, fail steps: {fail_steps}")
 
         if self.kernel_matrix_ is not None:
-            beta = self.a_[: self.n_samples_] - self.a_[self.n_samples_:]
+            beta = self.a_[: self.n_samples_] - self.a_[self.n_samples_ :]
             f = beta @ self.kernel_matrix_ + self.b_
             self.errors_ = f - self.y_
         else:
@@ -679,7 +778,9 @@ class SVR_(BaseEstimator, RegressorMixin):
         :raises NotFittedError: If the model is not fitted
         """
         if self.X_ is None or self.dual_coef_ is None or self.b_ is None:
-            raise NotFittedError("This SVR_ instance is not fitted yet. Call 'fit' with appropriate arguments before using this estimator.")
+            raise NotFittedError(
+                "This SVR_ instance is not fitted yet. Call 'fit' with appropriate arguments before using this estimator."
+            )
 
     def fit(self, X: ArrayLike, y: ArrayLike) -> "SVR_":
         """
@@ -711,7 +812,7 @@ class SVR_(BaseEstimator, RegressorMixin):
 
         # The sign vector: its purpose is to map the sign of the dual variables to the corresponding side of the error tube
         self.sign_ = np.ones(2 * self.n_samples_, dtype=float)
-        self.sign_[self.n_samples_:] = -1.0
+        self.sign_[self.n_samples_ :] = -1.0
 
         # The bias term
         self.b_ = 0.0
@@ -730,13 +831,7 @@ class SVR_(BaseEstimator, RegressorMixin):
         # Sequential Minimal Optimization (SMO) algorithm step
         self._smo_optimize()
 
-        # Enforcing epsilon-insensitive sparsity to prune unused dual variables
-        for i in range(self.n_samples_):
-            if abs(self.errors_[i]) < self.epsilon - self.tol:
-                self.a_[i] = 0.0
-                self.a_[i + self.n_samples_] = 0.0
-
-        self.alpha_, self.alpha_star_ = self.a_[: self.n_samples_].copy(), self.a_[self.n_samples_:].copy()
+        self.alpha_, self.alpha_star_ = self.a_[: self.n_samples_].copy(), self.a_[self.n_samples_ :].copy()
         self.dual_coef_ = self.alpha_ - self.alpha_star_
 
         # Counting the support vectors as the most closer ones to the error tube
@@ -752,7 +847,7 @@ class SVR_(BaseEstimator, RegressorMixin):
                 "mean": np.mean(self.kernel_matrix_),
                 "std": np.std(self.kernel_matrix_),
                 "var": np.var(self.kernel_matrix_),
-                "median": np.median(self.kernel_matrix_)
+                "median": np.median(self.kernel_matrix_),
             }
 
         return self
