@@ -1,8 +1,9 @@
 import logging
 import pathlib
 import numpy as np
+import shap
 
-from typing import Any, Type
+from typing import Any, Optional, Tuple, Type, TypeAlias
 from sklearn.base import BaseEstimator
 
 from sklearn.svm import SVR
@@ -124,5 +125,30 @@ DHI_ML_MODEL_REGISTRY: dict[str, tuple[Type[BaseEstimator], str]] = {
     "rf_sklearn": (RF, "classification"),
     "rf_scratch": (RF_SCRATCH, "classification"),
 }
+
+# "model_name": {"class": explainer_class, "kwargs": explainer_kwargs}
+DHI_ML_EXPLAINER_REGISTRY: dict[str, dict[str, Any]] = {
+    "svr_sklearn": {
+        "class": shap.explainers.KernelExplainer,
+        "kwargs": {}
+    },
+    "svr_scratch": {
+        "class": shap.explainers.KernelExplainer,
+        "kwargs": {}
+    },
+    "rf_sklearn": {
+        "class": shap.explainers.TreeExplainer,
+        "kwargs": {}
+    },
+    "rf_scratch": {
+        "class": shap.explainers.KernelExplainer, # NOTE: SHAP requires a more complex RF implementation to accept the scratch implementation
+        "kwargs": {}
+    },
+}
+
+DHI_SHAP_SUBSAMPLE_SIZE: int = 20
+DHI_SHAP_WATERFALL_MAX_DISPLAY: int = 10
+
+ShapExplanationsType: TypeAlias = Tuple[Optional[np.typing.ArrayLike], Optional[np.typing.ArrayLike]]
 
 DHI_DEFAULT_F_BETA_SCORE_BETA: float = 2.0

@@ -543,7 +543,7 @@ class Scorer:
         }
 
         if beta != 1.0:
-            if metrics > 0.0:
+            if beta > 0.0:
                 metrics["fbeta"] = self._fbeta_score(y_true, y_pred, beta) if not is_multi_class else None
                 metrics["fbeta_micro"] = (
                     self._fbeta_score(y_true, y_pred, beta, average="micro") if is_multi_class else None
