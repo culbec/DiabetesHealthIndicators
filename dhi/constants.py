@@ -124,3 +124,5 @@ DHI_ML_MODEL_REGISTRY: dict[str, tuple[Type[BaseEstimator], str]] = {
     "rf_sklearn": (RF, "classification"),
     "rf_scratch": (RF_SCRATCH, "classification"),
 }
+
+DHI_DEFAULT_F_BETA_SCORE_BETA: float = 2.0
