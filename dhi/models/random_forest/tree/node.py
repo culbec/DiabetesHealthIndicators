@@ -65,8 +65,7 @@ class Node:
             self.is_leaf = True
             return
 
-        # TODO: separate this training logic call from the init method?
-        self.split_dim, self.split_threshold, self.split_cost = self._split_node() # grow the tree recursively
+        self.split_dim, self.split_threshold, self.split_cost = self._split_node() # Grow the tree recursively
 
         if any(x is None for x in (self.left, self.right, self.split_dim, self.split_threshold)):
             self.is_leaf = True
@@ -94,6 +93,8 @@ class Node:
         right_labels = self.labels[right_indices[:, 0], 0]
         right_labels = np.atleast_2d(right_labels).T
 
+        # Standard CART-style pre-pruning condition
+        # Early stopping condition for tree growth if resulting child nodes would have too few samples
         if len(left_indices) >= self.min_samples_leaf and len(right_indices) >= self.min_samples_leaf:
             self.left = self._create_child_node(left_data, left_labels)
             self.right = self._create_child_node(right_data, right_labels)

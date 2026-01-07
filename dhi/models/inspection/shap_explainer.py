@@ -38,7 +38,7 @@ class SHAPModelExplainer:
         :param bool with_plots: Whether to plot the SHAP values, defaults to True
         :param int | None background_samples: Number of background samples for KernelExplainer (uses kmeans clustering).
         None means all samples are used. Defaults to 100.
-        :param int top_k_dependence: Number of top features (by mean SHAP) to use for dependence plots. Defaults to 10
+        :param int top_k_dependence: Number of top features (by mean absolute SHAP) to use for dependence plots. Defaults to 10
         :param bool with_interactions: Whether to compute and plot SHAP interaction values. Defaults to False.
         :return ShapExplanationsType: The SHAP values and interactions
         """
@@ -95,12 +95,11 @@ class SHAPModelExplainer:
             else:
                 shap_interaction_values = np.asarray(explainer.shap_interaction_values(X))
 
-        # TODO: separate plotting to methods?
         if with_plots:
-            # NOTE: closing all figures of matplotlib because plotyl and matplotlib are mixing
+            # NOTE: closing all figures of matplotlib because plotly and matplotlib are mixing
             plt.clf()
             plt.close("all")
-            self.logger.info(f"Generating SHAP plots...")
+            self.logger.info(f"Generating SHAP plots")
 
             # Beeswarm plot - global model explanation
             self.logger.info(f"Beeswarm plot - global model explanation")
@@ -141,7 +140,7 @@ class SHAPModelExplainer:
                     )
 
             if with_interactions and shap_interaction_values is not None:
-                self.logger.info(f"Generating SHAP interaction plots...")
+                self.logger.info(f"Generating SHAP interaction plots")
 
                 shap.summary_plot(shap_interaction_values, X)
 

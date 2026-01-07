@@ -12,7 +12,6 @@ from dhi.models.svr import SVR_ as SVR_SCRATCH
 from sklearn.ensemble import RandomForestClassifier as RF
 from dhi.models.random_forest import RandomForest_ as RF_SCRATCH
 
-# TODO: find a better way to separate constants on module level? maybe using init files per submodule?
 ##############################
 # GENERAL CONSTANTS
 ##############################
@@ -25,7 +24,7 @@ DHI_SIZES_BYTES: dict[str, int] = {
     "GB": 1 << 30,
 }
 
-DHI_SUPPORTED_EXT_FTYPE: dict[str, str] = {
+DHI_SUPPORTED_EXT_FILE_TYPE: dict[str, str] = {
     "csv": "csv",
     "xlsx": "excel",
     "xls": "excel",
@@ -111,10 +110,19 @@ DHI_FEATURE_SELECTION_DEFAULT_VARIANCE_THRESHOLD: float = 0.2
 DHI_COMPONENT_REDUCTION_DEFAULT_N_COMPONENTS: int = 2
 
 ##############################
-# ML CONSTANTS
+# EXPLAINABILITY CONSTANTS
 ##############################
 
-# TODO: move to separate registry file?
+DHI_SHAP_SUBSAMPLE_SIZE: int = 20
+DHI_SHAP_WATERFALL_MAX_DISPLAY: int = 10
+
+ShapExplanationsType: TypeAlias = Tuple[Optional[np.typing.ArrayLike], Optional[np.typing.ArrayLike]]
+
+DHI_DEFAULT_F_BETA_SCORE_BETA: float = 2.0
+
+##############################
+# ML CONSTANTS
+##############################
 
 # "model_name": (model_class, task_type)
 DHI_ML_MODEL_REGISTRY: dict[str, tuple[Type[BaseEstimator], str]] = {
@@ -145,10 +153,3 @@ DHI_ML_EXPLAINER_REGISTRY: dict[str, dict[str, Any]] = {
         "kwargs": {}
     },
 }
-
-DHI_SHAP_SUBSAMPLE_SIZE: int = 20
-DHI_SHAP_WATERFALL_MAX_DISPLAY: int = 10
-
-ShapExplanationsType: TypeAlias = Tuple[Optional[np.typing.ArrayLike], Optional[np.typing.ArrayLike]]
-
-DHI_DEFAULT_F_BETA_SCORE_BETA: float = 2.0

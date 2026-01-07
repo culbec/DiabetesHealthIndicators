@@ -20,8 +20,6 @@ class ExperimentRunner:
         self._init_from_kwargs(**kwargs)
 
     def _init_from_kwargs(self, **kwargs) -> None:
-        self.logger = get_logger(self.model.__class__.__name__)
-
         self.model_name = kwargs.get("model_name", None)
         assert isinstance(self.model_name, str), "model_name must be a string"
         assert (
@@ -67,6 +65,8 @@ class ExperimentRunner:
             if not callable(fn):
                 raise TypeError(f"The model {self.model_name} must implement the method '{method}()'")
 
+        self.logger = get_logger(self.model.__class__.__name__)
+
     @time_func
     def _save_model(self) -> None:
         if not self.save_path:
@@ -84,16 +84,11 @@ class ExperimentRunner:
             self.logger.error(f"Failed to save model to {self.save_path}: {e}")
 
     @time_func
-    def _load_model(self, load_path: str | pathlib.Path) -> None:
-        if not load_path.exists():
-            raise FileNotFoundError(f"Model file not found at {load_path}")
+    def _load_model(self) -> None:
+        if not self.load_path.exists():
+            raise FileNotFoundError(f"Model file not found at {self.load_path}")
 
-        try:
-            self.model = joblib.load(load_path)
-            self.logger.info(f"Model loaded from {load_path}")
-        except Exception as e:
-            self.logger.error(f"Failed to load model from {load_path}: {e}")
-            raise
+        self.model = joblib.load(self.load_path)
 
     @time_func
     def score(self, X: ArrayLike, y: ArrayLike) -> dict[str, float]:
@@ -143,15 +138,15 @@ class ExperimentRunner:
 
             optimizer = GridSearchCVOptimizer(
                 model_cls=self.model_cls,
+                task_type=self.task_type,
                 base_params=self.params,
                 param_grid=self.param_grid,
                 cv_params=self.cv_params,
-                task_type=self.task_type,
             )
             optimizer.fit(X, y)
 
             self.logger.info(f"Best hyperparameters: {optimizer.best_params_}")
-            self.logger.info(f"Best cross-validation score {optimizer.refit_metric_}: {optimizer.best_score_}")
+            self.logger.info(f"Best cross-validation {optimizer.refit_metric_} score: {optimizer.best_score_}")
             self.model = optimizer.best_estimator_
         else:
             self.logger.info(

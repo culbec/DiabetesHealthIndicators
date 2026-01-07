@@ -162,7 +162,6 @@
               "vote": "hard",
               "impurity_metric": "gini",
               "threshold": 0.5,
-              "bootstrap_features": false,
               "seed": 42
             },
             "cv_params": {

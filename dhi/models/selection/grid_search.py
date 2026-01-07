@@ -101,11 +101,11 @@ class GridSearchCVOptimizer:
     def __init__(self,
                  *,
                  model_cls: Any,
+                 task_type: str,
                  base_params: Dict[str, Any],
                  param_grid: Dict[str, List[Any]],
                  cv_params: Optional[Dict[str, Any]] = None,
-                 task_type: str = "classification"
-                 ):
+    ):
         self.model_cls = model_cls
         self.task_type = task_type
         self.base_params = dict(base_params or {})

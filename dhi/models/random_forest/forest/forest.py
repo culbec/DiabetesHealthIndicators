@@ -12,6 +12,16 @@ from dhi.models.random_forest.tree.tree import Tree
 from dhi.models.random_forest.sampling.bagging import BootstrapSampler
 
 
+DHI_RF_DEFAULT_MAX_DEPTH: int = 10
+DHI_RF_DEFAULT_MIN_SAMPLES_SPLIT: int = 5
+DHI_RF_DEFAULT_MIN_SAMPLES_LEAF: int = 3
+DHI_RF_DEFAULT_N_TREES: int = 100
+DHI_RF_DEFAULT_VOTE: str = "hard"
+DHI_RF_DEFAULT_IMPURITY_METRIC: str = "gini"
+DHI_RF_DEFAULT_THRESHOLD: float = 0.5
+DHI_RF_DEFAULT_BOOTSTRAP_FEATURES: bool = False
+
+
 @dataclass
 class BootstrappedTree:
     features: np.ndarray
@@ -39,7 +49,6 @@ class BootstrappedTree:
         return self.tree.predict(x_sub)
 
 
-# TODO: extract default parameter values to constants
 class RandomForest_(BaseEstimator, ClassifierMixin):
     """
     RandomForest binary classifier implementation compatible with Sklearn API.
@@ -49,21 +58,16 @@ class RandomForest_(BaseEstimator, ClassifierMixin):
     - predict(X) makes class labels predictions
     - predict_proba(X) makes class probabilities predictions
     """
-
     def __init__(self,
-                 n_trees: int,
-                 max_depth: int = 10,
-                 min_samples_split: int = 5,
-                 min_samples_leaf: int = 3,
-                 vote: str = "hard",
-                 impurity_metric: str = "gini",
-                 threshold: float = 0.5,
-                 bootstrap_features: bool = False,
+                 n_trees: int = DHI_RF_DEFAULT_N_TREES,
+                 max_depth: int = DHI_RF_DEFAULT_MAX_DEPTH,
+                 min_samples_split: int = DHI_RF_DEFAULT_MIN_SAMPLES_SPLIT,
+                 min_samples_leaf: int = DHI_RF_DEFAULT_MIN_SAMPLES_LEAF,
+                 vote: str = DHI_RF_DEFAULT_VOTE,
+                 impurity_metric: str = DHI_RF_DEFAULT_IMPURITY_METRIC,
+                 threshold: float = DHI_RF_DEFAULT_THRESHOLD,
                  seed: Optional[int] = None):
-        # TODO: more robust pre-pruning technique like chi-square test instead of min samples split?
-        # TODO: post-pruning technique? theoretically unrequired for ensemble method like RF, but should be researched
         self.n_trees = n_trees
-        self.bootstrap_features = bootstrap_features
 
         self.max_depth = max_depth
         self.min_samples_split = min_samples_split
@@ -87,6 +91,7 @@ class RandomForest_(BaseEstimator, ClassifierMixin):
         y = np.asarray(y)
 
         assert X.ndim == 2, "Input data must be a 2D array (n_samples, n_features)"
+
         self.n_features_in_ = X.shape[1]
         # Allow y to be passed as batched (n,1) or unbatched (n, ) input shape
         if y.ndim == 2 and y.shape[1] == 1:
@@ -113,7 +118,6 @@ class RandomForest_(BaseEstimator, ClassifierMixin):
             data=X,
             labels=y_col.astype(int),
             n_bags=self.n_trees,
-            bootstrap_features=self.bootstrap_features,
             seed=self.seed,
             oob=False  # can be used later for OOB error estimation alternatively to CV
         )
