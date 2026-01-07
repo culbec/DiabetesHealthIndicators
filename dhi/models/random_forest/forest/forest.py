@@ -39,6 +39,7 @@ class BootstrappedTree:
         return self.tree.predict(x_sub)
 
 
+# TODO: extract default parameter values to constants
 class RandomForest_(BaseEstimator, ClassifierMixin):
     """
     RandomForest binary classifier implementation compatible with Sklearn API.
@@ -114,7 +115,7 @@ class RandomForest_(BaseEstimator, ClassifierMixin):
             n_bags=self.n_trees,
             bootstrap_features=self.bootstrap_features,
             seed=self.seed,
-            oob=False  # TODO: can be turned on later for certain performance evaluation experiments
+            oob=False  # can be used later for OOB error estimation alternatively to CV
         )
 
         self.trees_ = []

@@ -114,9 +114,7 @@ DHI_COMPONENT_REDUCTION_DEFAULT_N_COMPONENTS: int = 2
 # ML CONSTANTS
 ##############################
 
-# TODO: rename to model registry and move to separate registry.py file
-# TODO: selection module with cross-validation (CV) from scratch, hyperparameter optimization (HPO), splitters, etc.
-# TODO: scratch module and sklearn module with factory class to return configured sklearn baselines?
+# TODO: move to separate registry file?
 
 # "model_name": (model_class, task_type)
 DHI_ML_MODEL_REGISTRY: dict[str, tuple[Type[BaseEstimator], str]] = {
@@ -140,8 +138,10 @@ DHI_ML_EXPLAINER_REGISTRY: dict[str, dict[str, Any]] = {
         "class": shap.explainers.TreeExplainer,
         "kwargs": {}
     },
+    # NOTE: SHAP TreeExplainer is incompatible with from-scratch RF implementation due to per-tree feature subspacing,
+    # as compared to sklearn's built-in RF which uses per-split subspacing instead. Therefore, KernedExplainer will be used here
     "rf_scratch": {
-        "class": shap.explainers.KernelExplainer, # NOTE: SHAP requires a more complex RF implementation to accept the scratch implementation
+        "class": shap.explainers.KernelExplainer,
         "kwargs": {}
     },
 }
