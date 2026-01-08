@@ -186,7 +186,7 @@ class ExperimentRunner:
 
     @time_func
     def predict(self, X: ArrayLike) -> np.ndarray:
-        return self._model.predict(X)
+        return self._model.predict(np.asarray(X))
 
     @time_func
     def predict_proba(self, X: ArrayLike) -> Optional[np.ndarray]:
@@ -197,5 +197,5 @@ class ExperimentRunner:
             )
             return None
 
-        pred = predict_proba(X)
+        pred = predict_proba(np.asarray(X))
         return np.asarray(pred) if pred is not None else pred

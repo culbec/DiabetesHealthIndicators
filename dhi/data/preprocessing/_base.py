@@ -192,7 +192,7 @@ class Preprocessor:
                 scaler_instance = dconst.DHI_PREPROCESSOR_NUMERICAL_SCALERS[scaler_type](
                     **scaler_params
                 )  # pyright: ignore[reportCallIssue]
-                fitted_scaler_instance = scaler_instance.fit(
+                fitted_scaler_instance = scaler_instance.fit(  # pyright: ignore[reportAttributeAccessIssue]
                     feature_values
                 )  # pyright: ignore[reportAttributeAccessIssue]
                 self.numerical_scalers[feature_to_transform] = fitted_scaler_instance

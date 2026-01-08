@@ -174,7 +174,7 @@ class SVR_(BaseEstimator, RegressorMixin):
         self.n_features_in_: int = 0
 
         self.kernel_func_: Optional[Callable] = None
-        self.kernel_matrix_: np.ndarray = np.asarray([])
+        self.kernel_matrix_: Optional[np.ndarray] = None
 
         self.gamma_: Optional[float] = None
         self.degree_: Optional[int] = None
@@ -199,7 +199,7 @@ class SVR_(BaseEstimator, RegressorMixin):
         self.iters_: Optional[int] = None
         self.ok_steps_: Optional[int] = None
         self.fail_steps_: Optional[int] = None
-        self.active_set_: np.ndarray = np.asarray([])
+        self.active_set_: Optional[np.ndarray] = None
 
     def __getstate__(self) -> dict:
         """
@@ -461,7 +461,7 @@ class SVR_(BaseEstimator, RegressorMixin):
             return True
         return False
 
-    def _select_first_index(self, rng: np.random.Generator, ignore_indices: set[int] | None = None) -> int | None:
+    def _select_first_index(self, ignore_indices: set[int] | None = None) -> int | None:
         """
         Selects the first index to be optimized by the SMO algorithm,
         one that violates the KKT conditions.
@@ -470,7 +470,6 @@ class SVR_(BaseEstimator, RegressorMixin):
           - Low alpha (< C) with positive gradient can increase (violation)
           - High alpha (> 0) with negative gradient can decrease (violation)
 
-        :param np.random.Generator rng: The random number generator
         :param set[int] | None ignore_indices: Indices to ignore
         :return int | None: The selected index, or None if no index is found
         """
@@ -701,7 +700,7 @@ class SVR_(BaseEstimator, RegressorMixin):
         if self.shrinking:
             self.active_set_ = np.ones(2 * self.n_samples_, dtype=bool)
         else:
-            self.active_set_ = np.asarray([])
+            self.active_set_ = None
 
         while passes < self.max_passes and iters < self.max_iter:
             # Unshrink near iteration limit to catch late violations
@@ -711,7 +710,7 @@ class SVR_(BaseEstimator, RegressorMixin):
             if self.shrinking and iters > 0 and (iters % shrinking_interval == 0):
                 self._apply_shrinking()
 
-            i = self._select_first_index(rng, ignore_indices=failed_indices)
+            i = self._select_first_index(ignore_indices=failed_indices)
             if i is None:
                 # Before declaring convergence, unshrink and re-check all variables
                 if self.shrinking and (self.active_set_ is not None) and (not bool(np.all(self.active_set_))):
@@ -838,7 +837,7 @@ class SVR_(BaseEstimator, RegressorMixin):
             self.kernel_matrix_ = self._compute_kernel_matrix(X, X)
             self.logger.debug("Kernel matrix cached")
         else:
-            self.kernel_matrix_ = np.asarray([])
+            self.kernel_matrix_ = None
             self.logger.debug("Not caching kernel matrix")
 
         # Initial errors are the negative of the target data
