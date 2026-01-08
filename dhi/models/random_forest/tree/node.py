@@ -11,14 +11,17 @@ class Node:
     - Acts as a decision node (internal): splits data based on the best feature and threshold
     - Acts as a leaf node: holds the predicted class and class distribution for samples reaching this node; returns the majority class during prediction
     """
-    def __init__(self,
-                 data: np.ndarray,
-                 labels: np.ndarray,
-                 max_depth: int,
-                 min_samples_split: int,
-                 min_samples_leaf: int,
-                 impurity_metric: str,
-                 depth: int = 0):
+
+    def __init__(
+        self,
+        data: np.ndarray,
+        labels: np.ndarray,
+        max_depth: int,
+        min_samples_split: int,
+        min_samples_leaf: int,
+        impurity_metric: str,
+        depth: int = 0,
+    ):
         """
         Initialize the node and recursively grow the tree by finding the best splits
 
@@ -65,7 +68,7 @@ class Node:
             self.is_leaf = True
             return
 
-        self.split_dim, self.split_threshold, self.split_cost = self._split_node() # Grow the tree recursively
+        self.split_dim, self.split_threshold, self.split_cost = self._split_node()  # Grow the tree recursively
 
         if any(x is None for x in (self.left, self.right, self.split_dim, self.split_threshold)):
             self.is_leaf = True
@@ -103,7 +106,7 @@ class Node:
 
     def _find_best_split(self):
         # Best weighted impurity after the split, as the average of child node impurities (lower is better)
-        best_split_cost = 1.
+        best_split_cost = 1.0
         best_threshold = None
         best_dimension = None
 
@@ -124,7 +127,7 @@ class Node:
         right_label_counts = {l: c for l, c in zip(self.class_labels, self.class_counts)}
 
         best_threshold = None
-        best_impurity = 1.
+        best_impurity = 1.0
 
         for i in range(1, self.n):
             left_val = self.data[indices[i - 1, 0], dim]
@@ -147,16 +150,17 @@ class Node:
 
             if cost < best_impurity and self.min_samples_leaf <= i <= self.n - self.min_samples_leaf:
                 best_impurity = cost
-                best_threshold = (left_val + right_val) / 2.
+                best_threshold = (left_val + right_val) / 2.0
 
         return best_impurity, best_threshold
 
     def _create_child_node(self, data: np.ndarray, labels: np.ndarray):
-        return Node(data=data,
-                    labels=labels,
-                    impurity_metric=self.impurity_metric,
-                    depth=self.depth + 1,
-                    max_depth=self.max_depth,
-                    min_samples_split=self.min_samples_split,
-                    min_samples_leaf=self.min_samples_leaf
+        return Node(
+            data=data,
+            labels=labels,
+            impurity_metric=self.impurity_metric,
+            depth=self.depth + 1,
+            max_depth=self.max_depth,
+            min_samples_split=self.min_samples_split,
+            min_samples_leaf=self.min_samples_leaf,
         )

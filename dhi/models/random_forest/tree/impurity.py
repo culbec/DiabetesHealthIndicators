@@ -3,7 +3,7 @@ import numpy as np
 
 def gini_impurity(class_counts: np.ndarray) -> float:
     total = np.sum(class_counts)
-    return 1. - np.sum(np.square(class_counts / total)) if total > 0 else 0.0
+    return 1.0 - np.sum(np.square(class_counts / total)) if total > 0 else 0.0
 
 
 def entropy(class_counts: np.ndarray) -> float:
@@ -17,9 +17,9 @@ def entropy(class_counts: np.ndarray) -> float:
 
 
 def compute_impurity(class_counts: np.ndarray, metric: str) -> float:
-    if metric == 'gini':
+    if metric == "gini":
         return gini_impurity(class_counts)
-    elif metric == 'entropy':
+    elif metric == "entropy":
         return entropy(class_counts)
     else:
         raise ValueError(f"Unknown impurity metric: {metric}")

@@ -112,6 +112,7 @@
                             1.5
                         ]
                     },
+                    "refit_metric": "root_mean_squared_error",
                     "n_jobs": -1
                 }
             },
@@ -147,6 +148,7 @@
                             1.5
                         ]
                     },
+                    "refit_metric": "root_mean_squared_error",
                     "n_jobs": -1
                 }
             },

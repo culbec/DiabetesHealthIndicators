@@ -5,17 +5,9 @@ from .node import Node
 
 
 def build_graph(tree: Tree, filename: str, path: str, view: bool = True):
-    node_attr = [
-        ('shape', 'box'),
-        ('style', 'filled,rounded'),
-        ('fontname', 'helvetica')
-    ];
+    node_attr = [("shape", "box"), ("style", "filled,rounded"), ("fontname", "helvetica")]
 
-    graph = Digraph('DTree',
-                    filename=filename,
-                    directory=path,
-                    format='png',
-                    node_attr=node_attr)
+    graph = Digraph("DTree", filename=filename, directory=path, format="png", node_attr=node_attr)
 
     _traverse_tree(graph, tree.root)
 
@@ -35,13 +27,13 @@ def _traverse_tree(graph: Digraph, node: Node):
     if node.left is not None:
         left_id = _node_id(node.left)
         graph.node(left_id, label=_format_node_label(node.left))
-        graph.edge(node_id, left_id, label='<=')
+        graph.edge(node_id, left_id, label="<=")
         _traverse_tree(graph, node.left)
 
     if node.right is not None:
         right_id = _node_id(node.right)
         graph.node(right_id, label=_format_node_label(node.right))
-        graph.edge(node_id, right_id, label='>')
+        graph.edge(node_id, right_id, label=">")
         _traverse_tree(graph, node.right)
 
 
@@ -50,9 +42,9 @@ def _node_id(node: Node):
 
 
 def _format_node_label(node: Node):
-    impurity = getattr(node, 'impurity', None)
-    samples = getattr(node, 'n', None)
-    count_dict = getattr(node, 'class_count_dict', None)
+    impurity = getattr(node, "impurity", None)
+    samples = getattr(node, "n", None)
+    count_dict = getattr(node, "class_count_dict", None)
 
     if isinstance(count_dict, dict) and len(count_dict) > 0:
         labels = list(count_dict.keys())
@@ -63,8 +55,8 @@ def _format_node_label(node: Node):
     else:
         labels, counts, predicted_class, prob = [], [], None, 0.0
 
-    feat_index = getattr(node, 'split_dim', None)
-    threshold = getattr(node, 'split_threshold', None)
+    feat_index = getattr(node, "split_dim", None)
+    threshold = getattr(node, "split_threshold", None)
 
     lines = []
     if impurity is not None:
@@ -81,4 +73,4 @@ def _format_node_label(node: Node):
     if predicted_class is not None:
         lines.append(f"Predict: {predicted_class} ({prob * 100:.1f}%)")
 
-    return '\\n'.join(lines)
+    return "\\n".join(lines)

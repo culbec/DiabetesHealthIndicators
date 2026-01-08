@@ -12,7 +12,13 @@ from dhi.utils import get_logger
 logger = get_logger(__name__)
 
 
-def plot2d(x: np.ndarray, y: np.ndarray, labels: Iterable[str] | None = None, title: str = "2D Plot", hover_data: dict = {}) -> None:
+def plot2d(
+    x: np.ndarray,
+    y: np.ndarray,
+    labels: Iterable[str] | None = None,
+    title: str = "2D Plot",
+    hover_data: dict = {},
+) -> None:
     """
     Plots the 2D plot of the dataframe.
 
@@ -46,7 +52,14 @@ def plot2d(x: np.ndarray, y: np.ndarray, labels: Iterable[str] | None = None, ti
     logger.info("Plotting of 2D plot completed successfully")
 
 
-def plot3d(x: np.ndarray, y: np.ndarray, z: np.ndarray, labels: Iterable[str] | None = None, title: str = "3D Plot", hover_data: dict = {}) -> None:
+def plot3d(
+    x: np.ndarray,
+    y: np.ndarray,
+    z: np.ndarray,
+    labels: Iterable[str] | None = None,
+    title: str = "3D Plot",
+    hover_data: dict = {},
+) -> None:
     """
     Plots the 3D plot of the dataframe.
 

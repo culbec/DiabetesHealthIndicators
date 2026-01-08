@@ -28,18 +28,22 @@ class BootstrappedTree:
     tree: Tree
 
     @classmethod
-    def train_from_bag(cls,
-                       x_bag: np.ndarray,
-                       y_bag: np.ndarray,
-                       features: np.ndarray,
-                       max_depth: int,
-                       min_samples_split: int,
-                       min_samples_leaf: int,
-                       impurity_metric: str) -> 'BootstrappedTree':
-        tree = Tree(max_depth=max_depth,
-                    min_samples_split=min_samples_split,
-                    min_samples_leaf=min_samples_leaf,
-                    impurity_metric=impurity_metric)
+    def train_from_bag(
+        cls,
+        x_bag: np.ndarray,
+        y_bag: np.ndarray,
+        features: np.ndarray,
+        max_depth: int,
+        min_samples_split: int,
+        min_samples_leaf: int,
+        impurity_metric: str,
+    ) -> "BootstrappedTree":
+        tree = Tree(
+            max_depth=max_depth,
+            min_samples_split=min_samples_split,
+            min_samples_leaf=min_samples_leaf,
+            impurity_metric=impurity_metric,
+        )
         tree.fit(x_bag, y_bag)
         return cls(features=features, tree=tree)
 
@@ -58,15 +62,18 @@ class RandomForest_(BaseEstimator, ClassifierMixin):
     - predict(X) makes class labels predictions
     - predict_proba(X) makes class probabilities predictions
     """
-    def __init__(self,
-                 n_trees: int = DHI_RF_DEFAULT_N_TREES,
-                 max_depth: int = DHI_RF_DEFAULT_MAX_DEPTH,
-                 min_samples_split: int = DHI_RF_DEFAULT_MIN_SAMPLES_SPLIT,
-                 min_samples_leaf: int = DHI_RF_DEFAULT_MIN_SAMPLES_LEAF,
-                 vote: str = DHI_RF_DEFAULT_VOTE,
-                 impurity_metric: str = DHI_RF_DEFAULT_IMPURITY_METRIC,
-                 threshold: float = DHI_RF_DEFAULT_THRESHOLD,
-                 seed: Optional[int] = None):
+
+    def __init__(
+        self,
+        n_trees: int = DHI_RF_DEFAULT_N_TREES,
+        max_depth: int = DHI_RF_DEFAULT_MAX_DEPTH,
+        min_samples_split: int = DHI_RF_DEFAULT_MIN_SAMPLES_SPLIT,
+        min_samples_leaf: int = DHI_RF_DEFAULT_MIN_SAMPLES_LEAF,
+        vote: str = DHI_RF_DEFAULT_VOTE,
+        impurity_metric: str = DHI_RF_DEFAULT_IMPURITY_METRIC,
+        threshold: float = DHI_RF_DEFAULT_THRESHOLD,
+        seed: Optional[int] = None,
+    ):
         self.n_trees = n_trees
 
         self.max_depth = max_depth
@@ -109,9 +116,12 @@ class RandomForest_(BaseEstimator, ClassifierMixin):
         classes = np.unique(y_1d)
         if set(classes.tolist()) != {0, 1}:
             raise ValueError(
-                f"Model supports binary classification input only, with expected labels {{0, 1}}. Got {classes.tolist()}")
+                f"Model supports binary classification input only, with expected labels {{0, 1}}. Got {classes.tolist()}"
+            )
 
-        self.classes_ = np.array([0, 1], dtype=int) # or use the more generic classes variable, computed using np.unique
+        self.classes_ = np.array(
+            [0, 1], dtype=int
+        )  # or use the more generic classes variable, computed using np.unique
         self.n_classes_ = 2
 
         self.sampler_ = BootstrapSampler(
@@ -119,7 +129,7 @@ class RandomForest_(BaseEstimator, ClassifierMixin):
             labels=y_col.astype(int),
             n_bags=self.n_trees,
             seed=self.seed,
-            oob=False  # can be used later for OOB error estimation alternatively to CV
+            oob=False,  # can be used later for OOB error estimation alternatively to CV
         )
 
         self.trees_ = []
@@ -133,7 +143,7 @@ class RandomForest_(BaseEstimator, ClassifierMixin):
                     max_depth=self.max_depth,
                     min_samples_split=self.min_samples_split,
                     min_samples_leaf=self.min_samples_leaf,
-                    impurity_metric=self.impurity_metric
+                    impurity_metric=self.impurity_metric,
                 )
             )
 
@@ -148,7 +158,8 @@ class RandomForest_(BaseEstimator, ClassifierMixin):
 
         if X.shape[1] != self.n_features_in_:
             raise ValueError(
-                f"X has {X.shape[1]} features, but this model was fitted with {self.n_features_in_} features")
+                f"X has {X.shape[1]} features, but this model was fitted with {self.n_features_in_} features"
+            )
 
         preds = [self._predict_one(X[i])[0] for i in range(X.shape[0])]
         return np.asarray(preds, dtype=int)
@@ -162,10 +173,11 @@ class RandomForest_(BaseEstimator, ClassifierMixin):
 
         if X.shape[1] != self.n_features_in_:
             raise ValueError(
-                f"X has {X.shape[1]} features, but this model was fitted with {self.n_features_in_} features")
+                f"X has {X.shape[1]} features, but this model was fitted with {self.n_features_in_} features"
+            )
 
         p1 = np.array([self._p1_one(X[i]) for i in range(X.shape[0])], dtype=float)
-        return np.column_stack([1.0 - p1, p1]) # returns probabilities for classes [0, 1]
+        return np.column_stack([1.0 - p1, p1])  # returns probabilities for classes [0, 1]
 
     def _predict_one(self, x: np.ndarray) -> Tuple[int, float]:
         if self.vote == "hard":
@@ -201,8 +213,12 @@ class RandomForest_(BaseEstimator, ClassifierMixin):
 
     def _check_fitted(self) -> None:
         if not hasattr(self, "trees_") or self.trees_ is None or len(self.trees_) == 0:
-            raise NotFittedError("This RandomForest_ instance is not fitted yet. "
-                                 "Call 'fit' with appropriate arguments before using this estimator.")
+            raise NotFittedError(
+                "This RandomForest_ instance is not fitted yet. "
+                "Call 'fit' with appropriate arguments before using this estimator."
+            )
         if not hasattr(self, "n_features_in_") or not hasattr(self, "classes_"):
-            raise NotFittedError("This RandomForest_ instance is not fitted yet. "
-                                 "Call 'fit' with appropriate arguments before using this estimator.")
+            raise NotFittedError(
+                "This RandomForest_ instance is not fitted yet. "
+                "Call 'fit' with appropriate arguments before using this estimator."
+            )

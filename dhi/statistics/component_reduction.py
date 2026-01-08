@@ -69,12 +69,25 @@ def _component_reduction(df: pd.DataFrame, color_column: str, n_components: int,
         case 2:
             x = reduced_data[:, 0]
             y = reduced_data[:, 1]
-            plot2d(x, y, labels=df[color_column].values, title=title + f" (target={color_column})", hover_data=hover_data)
+            plot2d(
+                x,
+                y,
+                labels=df[color_column].values,
+                title=title + f" (target={color_column})",
+                hover_data=hover_data,
+            )
         case 3:
             x = reduced_data[:, 0]
             y = reduced_data[:, 1]
             z = reduced_data[:, 2]
-            plot3d(x, y, z, labels=df[color_column].values, title=title + f" (target={color_column})", hover_data=hover_data)
+            plot3d(
+                x,
+                y,
+                z,
+                labels=df[color_column].values,
+                title=title + f" (target={color_column})",
+                hover_data=hover_data,
+            )
         case _:
             logger.warning(f"Unsupported number of components: {n_components}, skipping PCA plot")
             return

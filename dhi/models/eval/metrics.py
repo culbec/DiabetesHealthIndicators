@@ -5,101 +5,101 @@ from numpy.typing import ArrayLike
 
 
 # Regression metrics
-def max_error(y_true: ArrayLike, y_pred: ArrayLike) -> float:
+def max_error(y_true: np.ndarray, y_pred: np.ndarray) -> float:
     """
     Computes the maximum absolute error between true and predicted values.
 
-    :param ArrayLike y_true: The true labels.
-    :param ArrayLike y_pred: The predicted labels.
+    :param np.ndarray y_true: The true labels.
+    :param np.ndarray y_pred: The predicted labels.
     :return float: The maximum absolute error.
     """
     return float(np.max(np.abs(y_true - y_pred)))
 
 
-def mean_absolute_error(y_true: ArrayLike, y_pred: ArrayLike) -> float:
+def mean_absolute_error(y_true: np.ndarray, y_pred: np.ndarray) -> float:
     """
     Computes the mean absolute error between true and predicted values.
 
-    :param ArrayLike y_true: The true labels.
-    :param ArrayLike y_pred: The predicted labels.
+    :param np.ndarray y_true: The true labels.
+    :param np.ndarray y_pred: The predicted labels.
     :return float: The mean absolute error.
     """
     return float(np.mean(np.abs(y_true - y_pred)))
 
 
-def mean_squared_error(y_true: ArrayLike, y_pred: ArrayLike) -> float:
+def mean_squared_error(y_true: np.ndarray, y_pred: np.ndarray) -> float:
     """
     Computes the mean squared error between true and predicted values.
 
-    :param ArrayLike y_true: The true labels.
-    :param ArrayLike y_pred: The predicted labels.
+    :param np.ndarray y_true: The true labels.
+    :param np.ndarray y_pred: The predicted labels.
     :return float: The mean squared error.
     """
     return float(np.mean((y_true - y_pred) ** 2))
 
 
-def median_absolute_error(y_true: ArrayLike, y_pred: ArrayLike) -> float:
+def median_absolute_error(y_true: np.ndarray, y_pred: np.ndarray) -> float:
     """
     Computes the median absolute error between true and predicted values.
 
-    :param ArrayLike y_true: The true labels.
-    :param ArrayLike y_pred: The predicted labels.
+    :param np.ndarray y_true: The true labels.
+    :param np.ndarray y_pred: The predicted labels.
     :return float: The median absolute error.
     """
     return float(np.median(np.abs(y_true - y_pred)))
 
 
-def root_mean_squared_error(y_true: ArrayLike, y_pred: ArrayLike) -> float:
+def root_mean_squared_error(y_true: np.ndarray, y_pred: np.ndarray) -> float:
     """
     Computes the root mean squared error between true and predicted values.
 
-    :param ArrayLike y_true: The true labels.
-    :param ArrayLike y_pred: The predicted labels.
+    :param np.ndarray y_true: The true labels.
+    :param np.ndarray y_pred: The predicted labels.
     :return float: The root mean squared error.
     """
     return float(np.sqrt(np.mean((y_true - y_pred) ** 2)))
 
 
-def mean_squared_log_error(y_true: ArrayLike, y_pred: ArrayLike) -> float:
+def mean_squared_log_error(y_true: np.ndarray, y_pred: np.ndarray) -> float:
     """
     Computes the mean squared logarithmic error between true and predicted values.
 
-    :param ArrayLike y_true: The true labels (must be non-negative).
-    :param ArrayLike y_pred: The predicted labels (must be non-negative).
+    :param np.ndarray y_true: The true labels (must be non-negative).
+    :param np.ndarray y_pred: The predicted labels (must be non-negative).
     :return float: The mean squared logarithmic error.
     """
     return float(np.mean((np.log(1 + y_true) - np.log(1 + y_pred)) ** 2))
 
 
-def root_mean_squared_log_error(y_true: ArrayLike, y_pred: ArrayLike) -> float:
+def root_mean_squared_log_error(y_true: np.ndarray, y_pred: np.ndarray) -> float:
     """
     Computes the root mean squared logarithmic error between true and predicted values.
 
-    :param ArrayLike y_true: The true labels (must be non-negative).
-    :param ArrayLike y_pred: The predicted labels (must be non-negative).
+    :param np.ndarray y_true: The true labels (must be non-negative).
+    :param np.ndarray y_pred: The predicted labels (must be non-negative).
     :return float: The root mean squared logarithmic error.
     """
     return float(np.sqrt(np.mean((np.log(1 + y_true) - np.log(1 + y_pred)) ** 2)))
 
 
-def mean_absolute_percentage_error(y_true: ArrayLike, y_pred: ArrayLike) -> float:
+def mean_absolute_percentage_error(y_true: np.ndarray, y_pred: np.ndarray) -> float:
     """
     Computes the mean absolute percentage error between true and predicted values.
 
-    :param ArrayLike y_true: The true labels.
-    :param ArrayLike y_pred: The predicted labels.
+    :param np.ndarray y_true: The true labels.
+    :param np.ndarray y_pred: The predicted labels.
     :return float: The mean absolute percentage error.
     """
     denominator = np.maximum(np.finfo(float).eps, np.abs(y_true))
     return float(np.mean(np.abs(y_true - y_pred) / denominator))
 
 
-def r2_score(y_true: ArrayLike, y_pred: ArrayLike, force_finite: bool = True) -> float:
+def r2_score(y_true: np.ndarray, y_pred: np.ndarray, force_finite: bool = True) -> float:
     """
     Computes the R-squared (coefficient of determination) score.
 
-    :param ArrayLike y_true: The true labels.
-    :param ArrayLike y_pred: The predicted labels.
+    :param np.ndarray y_true: The true labels.
+    :param np.ndarray y_pred: The predicted labels.
     :param bool force_finite: If True, returns -inf when denominator is 0; otherwise returns nan.
     :return float: The R-squared score.
     """
@@ -112,12 +112,12 @@ def r2_score(y_true: ArrayLike, y_pred: ArrayLike, force_finite: bool = True) ->
         return float("-inf") if denominator == 0 else float(1 - numerator / denominator)
 
 
-def explained_variance_score(y_true: ArrayLike, y_pred: ArrayLike, force_finite: bool = True) -> float:
+def explained_variance_score(y_true: np.ndarray, y_pred: np.ndarray, force_finite: bool = True) -> float:
     """
     Computes the explained variance score.
 
-    :param ArrayLike y_true: The true labels.
-    :param ArrayLike y_pred: The predicted labels.
+    :param np.ndarray y_true: The true labels.
+    :param np.ndarray y_pred: The predicted labels.
     :param bool force_finite: If True, returns -inf when denominator is 0; otherwise returns nan.
     :return float: The explained variance score.
     """
@@ -131,25 +131,27 @@ def explained_variance_score(y_true: ArrayLike, y_pred: ArrayLike, force_finite:
 
 
 # Classification metrics
-def accuracy_score(y_true: ArrayLike, y_pred: ArrayLike) -> float:
+def accuracy_score(y_true: np.ndarray, y_pred: np.ndarray) -> float:
     """
     Computes the accuracy score.
 
-    :param ArrayLike y_true: The true labels.
-    :param ArrayLike y_pred: The predicted labels.
+    :param np.ndarray y_true: The true labels.
+    :param np.ndarray y_pred: The predicted labels.
     :return float: The accuracy score.
     """
     return float(np.mean(y_true == y_pred))
 
 
 def f1_score(
-        y_true: ArrayLike, y_pred: ArrayLike, average: Literal["binary", "micro", "macro", "weighted"] = "binary"
+    y_true: np.ndarray,
+    y_pred: np.ndarray,
+    average: Literal["binary", "micro", "macro", "weighted"] = "binary",
 ) -> float:
     """
     Computes the F1 score.
 
-    :param ArrayLike y_true: The true labels.
-    :param ArrayLike y_pred: The predicted labels.
+    :param np.ndarray y_true: The true labels.
+    :param np.ndarray y_pred: The predicted labels.
     :param Literal["binary", "micro", "macro", "weighted"] average: The averaging method.
     :return float: The F1 score.
     :raises ValueError: If average is 'binary' for multi-class data.
@@ -204,16 +206,16 @@ def f1_score(
 
 
 def fbeta_score(
-        y_true: ArrayLike,
-        y_pred: ArrayLike,
-        beta: float,
-        average: Literal["binary", "micro", "macro", "weighted"] = "binary",
+    y_true: np.ndarray,
+    y_pred: np.ndarray,
+    beta: float,
+    average: Literal["binary", "micro", "macro", "weighted"] = "binary",
 ) -> float:
     """
     Computes the F-beta score.
 
-    :param ArrayLike y_true: The true labels.
-    :param ArrayLike y_pred: The predicted labels.
+    :param np.ndarray y_true: The true labels.
+    :param np.ndarray y_pred: The predicted labels.
     :param float beta: The beta parameter weighting recall vs precision.
     :param Literal["binary", "micro", "macro", "weighted"] average: The averaging method.
     :return float: The F-beta score.
@@ -240,7 +242,7 @@ def fbeta_score(
             precision = tp / (tp + fp) if tp + fp > 0 else 0.0
             recall = tp / (tp + fn) if tp + fn > 0 else 0.0
             f_beta = (
-                (1 + beta ** 2) * precision * recall / ((beta ** 2 * precision) + recall)
+                (1 + beta**2) * precision * recall / ((beta**2 * precision) + recall)
                 if precision + recall > 0
                 else 0.0
             )
@@ -252,8 +254,8 @@ def fbeta_score(
             fp = np.sum([((y_true != cls).astype(int) & (y_pred == cls).astype(int)) for cls in unique_classes])
             fn = np.sum([((y_true == cls).astype(int) & (y_pred != cls).astype(int)) for cls in unique_classes])
 
-            numerator = (1 + beta ** 2) * tp
-            denominator = (1 + beta ** 2 * tp) + fp + (beta ** 2 * fn)
+            numerator = (1 + beta**2) * tp
+            denominator = (1 + beta**2 * tp) + fp + (beta**2 * fn)
             return float(numerator / denominator) if denominator > 0 else 0.0
         elif average == "macro":
             return float(np.mean(f_beta_scores))
@@ -266,13 +268,15 @@ def fbeta_score(
 
 
 def precision_score(
-        y_true: ArrayLike, y_pred: ArrayLike, average: Literal["binary", "micro", "macro", "weighted"] = "binary"
+    y_true: np.ndarray,
+    y_pred: np.ndarray,
+    average: Literal["binary", "micro", "macro", "weighted"] = "binary",
 ) -> float:
     """
     Computes the precision score.
 
-    :param ArrayLike y_true: The true labels.
-    :param ArrayLike y_pred: The predicted labels.
+    :param np.ndarray y_true: The true labels.
+    :param np.ndarray y_pred: The predicted labels.
     :param Literal["binary", "micro", "macro", "weighted"] average: The averaging method.
     :return float: The precision score.
     :raises ValueError: If average is 'binary' for multi-class data.
@@ -318,13 +322,15 @@ def precision_score(
 
 
 def recall_score(
-        y_true: ArrayLike, y_pred: ArrayLike, average: Literal["binary", "micro", "macro", "weighted"] = "binary"
+    y_true: np.ndarray,
+    y_pred: np.ndarray,
+    average: Literal["binary", "micro", "macro", "weighted"] = "binary",
 ) -> float:
     """
     Computes the recall score.
 
-    :param ArrayLike y_true: The true labels.
-    :param ArrayLike y_pred: The predicted labels.
+    :param np.ndarray y_true: The true labels.
+    :param np.ndarray y_pred: The predicted labels.
     :param Literal["binary", "micro", "macro", "weighted"] average: The averaging method.
     :return float: The recall score.
     :raises ValueError: If average is 'binary' for multi-class data.
@@ -369,15 +375,15 @@ def recall_score(
         raise ValueError(f"Invalid average: {average}")
 
 
-def log_loss(y_true: ArrayLike, y_proba: ArrayLike, eps: float = 1e-15) -> float:
+def log_loss(y_true: np.ndarray, y_proba: np.ndarray, eps: float = 1e-15) -> float:
     """
     Computes the log loss (cross-entropy loss).
 
     Binary formula: -1/n * sum(yi * log(pi) + (1-yi) * log(1-pi))
     Multi-class formula: -1/n * sum(sum(yij * log(pij)))
 
-    :param ArrayLike y_true: The true labels.
-    :param ArrayLike y_proba: The predicted probabilities.
+    :param np.ndarray y_true: The true labels.
+    :param np.ndarray y_proba: The predicted probabilities.
     :param float eps: Small value to avoid log(0), defaults to 1e-15.
     :return float: The log loss.
     """
@@ -404,15 +410,15 @@ def log_loss(y_true: ArrayLike, y_proba: ArrayLike, eps: float = 1e-15) -> float
     return float(loss)
 
 
-def roc_auc_score(y_true: ArrayLike, y_score: ArrayLike) -> float:
+def roc_auc_score(y_true: np.ndarray, y_score: np.ndarray) -> float:
     """
     Computes the ROC AUC score using the trapezoidal rule.
 
     ROC AUC is the area under the curve of TPR vs FPR.
     TPR = TP / (TP + FN), FPR = FP / (FP + TN)
 
-    :param ArrayLike y_true: The true binary labels.
-    :param ArrayLike y_score: The predicted scores/probabilities for the positive class.
+    :param np.ndarray y_true: The true binary labels.
+    :param np.ndarray y_score: The predicted scores/probabilities for the positive class.
     :return float: The ROC AUC score.
     """
     y_true = np.asarray(y_true).ravel()
@@ -446,14 +452,14 @@ def roc_auc_score(y_true: ArrayLike, y_score: ArrayLike) -> float:
     return float(auc)
 
 
-def average_precision_score(y_true: ArrayLike, y_score: ArrayLike) -> float:
+def average_precision_score(y_true: np.ndarray, y_score: np.ndarray) -> float:
     """
     Computes the average precision score.
 
     AP = sum((Rn - Rn-1) * Pn), the area under the precision-recall curve.
 
-    :param ArrayLike y_true: The true binary labels.
-    :param ArrayLike y_score: The predicted scores/probabilities for the positive class.
+    :param np.ndarray y_true: The true binary labels.
+    :param np.ndarray y_score: The predicted scores/probabilities for the positive class.
     :return float: The average precision score.
     """
     y_true = np.asarray(y_true).ravel()
