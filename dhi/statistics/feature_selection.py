@@ -1,4 +1,4 @@
-from typing import Any, TypeAlias
+from typing import Any, Mapping, TypeAlias
 
 import numpy as np
 import pandas as pd
@@ -279,7 +279,7 @@ def univariate_feature_selection(
     label_columns: list[str],
     target_column: str,
     mode: str = "percentile",
-    params: dict[str, Any] = {},
+    params: Mapping[str, Any] = {},
 ) -> None:
     """
     Performs a univariate feature selection on the dataframe.
@@ -291,7 +291,7 @@ def univariate_feature_selection(
     :param list[str] label_columns: The columns to remove from the dataframe
     :param str target_column: The column to perform the univariate feature selection on
     :param str mode: The mode to perform the univariate feature selection on, defaults to "percentile"
-    :param dict[str, Any] params: The parameters to perform the univariate feature selection on, defaults to {}
+    :param Mapping[str, Any] params: The parameters to perform the univariate feature selection on, defaults to {}
     :param list[str] | None columns: The columns to perform the univariate feature selection on, defaults to None
     """
     if df.empty:
@@ -374,7 +374,10 @@ def model_feature_selection(
 
     logger.info(f"Selected {x_new.shape} features out of {len(X.columns)} features")
 
-    return pd.DataFrame(np.asarray(x_new), columns=selector.get_feature_names_out()), selector
+    return (
+        pd.DataFrame(np.asarray(x_new), columns=selector.get_feature_names_out()),
+        selector,
+    )
 
 
 def relief_feature_selection(

@@ -7,7 +7,9 @@ from dhi.decorators import time_func
 
 @time_func
 def reduce_memory_usage(
-    df: pd.DataFrame, logger: logging.Logger | None = None, memory_usage_unit: str = "MB"
+    df: pd.DataFrame,
+    logger: logging.Logger | None = None,
+    memory_usage_unit: str = "MB",
 ) -> pd.DataFrame:
     """
     Reduces the memory usage of a pandas DataFrame

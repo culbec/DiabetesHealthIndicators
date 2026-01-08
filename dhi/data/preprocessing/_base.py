@@ -28,9 +28,7 @@ class Preprocessor:
         # Nan category
         self.nan_category = kwargs.get("nan_category", dconst.DHI_PREPROCESSOR_NAN_CATEGORY)
         if not isinstance(self.nan_category, str):
-            self.logger.warning(
-                f"nan_category must be a string, defaulting to {dconst.DHI_PREPROCESSOR_NAN_CATEGORY}"
-            )
+            self.logger.warning(f"nan_category must be a string, defaulting to {dconst.DHI_PREPROCESSOR_NAN_CATEGORY}")
             self.nan_category = dconst.DHI_PREPROCESSOR_NAN_CATEGORY
 
         # Numerical to categorical features mapping
@@ -56,15 +54,11 @@ class Preprocessor:
 
     def _get_transform_info(self, transform_info: object, default_type: str) -> tuple[str, dict]:
         if not transform_info:
-            self.logger.warning(
-                f"No transform information provided. Falling back to {default_type}"
-            )
+            self.logger.warning(f"No transform information provided. Falling back to {default_type}")
             return default_type, {}
 
         if not isinstance(transform_info, dict):
-            self.logger.warning(
-                f"transform_info must be a dictionary, defaulting to {default_type}"
-            )
+            self.logger.warning(f"transform_info must be a dictionary, defaulting to {default_type}")
             return default_type, {}
 
         transform_type = transform_info.get("type", default_type)
@@ -164,7 +158,7 @@ class Preprocessor:
 
         scaler_type, scaler_params = self._get_transform_info(
             transform_info=self.numerical_features.get("scaler", {}),
-            default_type=dconst.DHI_PREPROCESSOR_DEFAULT_SCALER
+            default_type=dconst.DHI_PREPROCESSOR_DEFAULT_SCALER,
         )
 
         features_to_transform = self.numerical_features.get("features", [])
@@ -195,15 +189,17 @@ class Preprocessor:
         for feature_to_transform in features_to_transform:
             feature_values = df_numerical_transformed[feature_to_transform].to_numpy().reshape(-1, 1)
             if fit or feature_to_transform not in self.numerical_scalers:
-                scaler_instance = dconst.DHI_PREPROCESSOR_NUMERICAL_SCALERS[scaler_type](**scaler_params)  # pyright: ignore[reportCallIssue]
-                fitted_scaler_instance = scaler_instance.fit(feature_values) # pyright: ignore[reportAttributeAccessIssue]
+                scaler_instance = dconst.DHI_PREPROCESSOR_NUMERICAL_SCALERS[scaler_type](
+                    **scaler_params
+                )  # pyright: ignore[reportCallIssue]
+                fitted_scaler_instance = scaler_instance.fit(
+                    feature_values
+                )  # pyright: ignore[reportAttributeAccessIssue]
                 self.numerical_scalers[feature_to_transform] = fitted_scaler_instance
             else:
                 fitted_scaler_instance = self.numerical_scalers[feature_to_transform]
 
-            df_numerical_transformed[feature_to_transform] = fitted_scaler_instance.transform(
-                feature_values
-            ).flatten()
+            df_numerical_transformed[feature_to_transform] = fitted_scaler_instance.transform(feature_values).flatten()
 
         return df_numerical_transformed
 
@@ -227,7 +223,7 @@ class Preprocessor:
 
         encoder_type, encoder_params = self._get_transform_info(
             transform_info=self.categorical_features.get("encoder", {}),
-            default_type=dconst.DHI_PREPROCESSOR_DEFAULT_ENCODER
+            default_type=dconst.DHI_PREPROCESSOR_DEFAULT_ENCODER,
         )
 
         features_to_encode = self.categorical_features.get("features", [])
@@ -260,7 +256,9 @@ class Preprocessor:
             if encoder_type != "label_encoder":
                 values = values.reshape(-1, 1)
             if fit or feature_to_encode not in self.categorical_encoders:
-                encoder_instance = dconst.DHI_PREPROCESSOR_CATEGORICAL_ENCODERS[encoder_type](**encoder_params)  # pyright: ignore[reportCallIssue]
+                encoder_instance = dconst.DHI_PREPROCESSOR_CATEGORICAL_ENCODERS[encoder_type](
+                    **encoder_params
+                )  # pyright: ignore[reportCallIssue]
                 fitted_encoder_instance = encoder_instance.fit(values)  # pyright: ignore[reportAttributeAccessIssue]
                 self.categorical_encoders[feature_to_encode] = fitted_encoder_instance
             else:
@@ -271,12 +269,12 @@ class Preprocessor:
                 known = set(getattr(fitted_encoder_instance, "classes_"))
                 if self.nan_category in known:
                     values_1d = original_values
-                    values_1d = pd.Series(values_1d).where(pd.Series(values_1d).isin(known),
-                                                           self.nan_category).to_numpy()
+                    values_1d = (
+                        pd.Series(values_1d).where(pd.Series(values_1d).isin(known), self.nan_category).to_numpy()
+                    )
                     values = values_1d
 
             df_categorical_encoded[feature_to_encode] = fitted_encoder_instance.transform(values)
-
 
         return df_categorical_encoded
 

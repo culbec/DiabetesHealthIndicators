@@ -1,16 +1,14 @@
 import logging
 import pathlib
+from typing import Any, Mapping, Tuple, Type, TypeAlias, Union
+
 import numpy as np
 import shap
-
-from typing import Any, Optional, Tuple, Type, TypeAlias
-from sklearn.base import BaseEstimator
-
-from sklearn.svm import SVR
-from dhi.models.svr import SVR_ as SVR_SCRATCH
-
 from sklearn.ensemble import RandomForestClassifier as RF
+from sklearn.svm import SVR
+
 from dhi.models.random_forest import RandomForest_ as RF_SCRATCH
+from dhi.models.svr import SVR_ as SVR_SCRATCH
 
 ##############################
 # GENERAL CONSTANTS
@@ -18,13 +16,13 @@ from dhi.models.random_forest import RandomForest_ as RF_SCRATCH
 
 # Sizes in bytes
 DHI_DEFAULT_SIZE_UNIT: str = "MB"
-DHI_SIZES_BYTES: dict[str, int] = {
+DHI_SIZES_BYTES: Mapping[str, int] = {
     "KB": 1 << 10,
     "MB": 1 << 20,
     "GB": 1 << 30,
 }
 
-DHI_SUPPORTED_EXT_FILE_TYPE: dict[str, str] = {
+DHI_SUPPORTED_EXT_FILE_TYPE: Mapping[str, str] = {
     "csv": "csv",
     "xlsx": "excel",
     "xls": "excel",
@@ -46,14 +44,14 @@ DHI_LOGGING_LOG_PATH: pathlib.Path = pathlib.Path().cwd() / ".." / "logs" / "dhi
 # NUMERICAL CONSTANTS
 ##############################
 
-DHI_NUMPY_INT_RANGES: list[tuple[int, int, type]] = [
+DHI_NUMPY_INT_RANGES: list[Tuple[int, int, type]] = [
     (np.iinfo(np.int8).min, np.iinfo(np.int8).max, np.int8),
     (np.iinfo(np.int16).min, np.iinfo(np.int16).max, np.int16),
     (np.iinfo(np.int32).min, np.iinfo(np.int32).max, np.int32),
     (np.iinfo(np.int64).min, np.iinfo(np.int64).max, np.int64),
 ]
 
-DHI_NUMPY_FLOAT_RANGES: list[tuple[np.floating, np.floating, type]] = [
+DHI_NUMPY_FLOAT_RANGES: list[Tuple[np.floating, np.floating, type]] = [
     (np.finfo(np.float16).min, np.finfo(np.float16).max, np.float16),
     (np.finfo(np.float32).min, np.finfo(np.float32).max, np.float32),
     (np.finfo(np.float64).min, np.finfo(np.float64).max, np.float64),
@@ -68,11 +66,11 @@ DHI_PLOT_WIDTH: int = 1280
 DHI_PLOT_HEIGHT: int = 720
 
 DHI_PLOT_HISTOGRAM_DEFAULT_BINS: int = 10
-DHI_PLOT_HISTOGRAM_MARKER: dict = {"line": {"width": 0.8, "color": "black"}}
+DHI_PLOT_HISTOGRAM_MARKER: Mapping = {"line": {"width": 0.8, "color": "black"}}
 DHI_PLOT_HISTOGRAM_WIDTH: int = 800
 DHI_PLOT_HISTOGRAM_HEIGHT: int = 600
 
-DHI_PLOT_DISTPLOT_KDE_LINE: dict = {"color": "red", "width": 2}
+DHI_PLOT_DISTPLOT_KDE_LINE: Mapping = {"color": "red", "width": 2}
 
 DHI_PLOT_SUBPLOT_COLS_PER_ROW: int = 3
 
@@ -80,7 +78,7 @@ DHI_PLOT_SUBPLOT_COLS_PER_ROW: int = 3
 # FEATURE SELECTION CONSTANTS
 ##############################
 
-DHI_FEATURE_SELECTION_MODES: dict[str, dict[str, Any]] = {
+DHI_FEATURE_SELECTION_MODES: Mapping[str, Mapping[str, Any]] = {
     "percentile": {
         "param": 20,
     },
@@ -115,8 +113,7 @@ DHI_COMPONENT_REDUCTION_DEFAULT_N_COMPONENTS: int = 2
 
 DHI_SHAP_SUBSAMPLE_SIZE: int = 20
 DHI_SHAP_WATERFALL_MAX_DISPLAY: int = 10
-
-ShapExplanationsType: TypeAlias = Tuple[Optional[np.typing.ArrayLike], Optional[np.typing.ArrayLike]]
+DHI_SHAP_BACKGROUND_SAMPLES: int = 50
 
 DHI_DEFAULT_F_BETA_SCORE_BETA: float = 2.0
 
@@ -124,8 +121,10 @@ DHI_DEFAULT_F_BETA_SCORE_BETA: float = 2.0
 # ML CONSTANTS
 ##############################
 
+ModelType: TypeAlias = SVR | SVR_SCRATCH | RF | RF_SCRATCH
+
 # "model_name": (model_class, task_type)
-DHI_ML_MODEL_REGISTRY: dict[str, tuple[Type[BaseEstimator], str]] = {
+DHI_ML_MODEL_REGISTRY: Mapping[str, Tuple[Type[ModelType], str]] = {
     "svr_sklearn": (SVR, "regression"),
     "svr_scratch": (SVR_SCRATCH, "regression"),
     "rf_sklearn": (RF, "classification"),
@@ -133,23 +132,14 @@ DHI_ML_MODEL_REGISTRY: dict[str, tuple[Type[BaseEstimator], str]] = {
 }
 
 # "model_name": {"class": explainer_class, "kwargs": explainer_kwargs}
-DHI_ML_EXPLAINER_REGISTRY: dict[str, dict[str, Any]] = {
-    "svr_sklearn": {
-        "class": shap.explainers.KernelExplainer,
-        "kwargs": {}
-    },
-    "svr_scratch": {
-        "class": shap.explainers.KernelExplainer,
-        "kwargs": {}
-    },
-    "rf_sklearn": {
-        "class": shap.explainers.TreeExplainer,
-        "kwargs": {}
-    },
+DHI_ML_EXPLAINER_REGISTRY: Mapping[str, Mapping[str, Any]] = {
+    "svr_sklearn": {"class": shap.Explainer, "kwargs": {}},
+    "svr_scratch": {"class": shap.Explainer, "kwargs": {}},
+    "rf_sklearn": {"class": shap.Explainer, "kwargs": {}},
     # NOTE: SHAP TreeExplainer is incompatible with from-scratch RF implementation due to per-tree feature subspacing,
     # as compared to sklearn's built-in RF which uses per-split subspacing instead. Therefore, KernedExplainer will be used here
     "rf_scratch": {
-        "class": shap.explainers.KernelExplainer,
-        "kwargs": {}
+        "class": shap.Explainer,  # NOTE: SHAP requires a more complex RF implementation to accept the scratch implementation
+        "kwargs": {},
     },
 }

@@ -21,13 +21,16 @@ class BootstrapSampler:
     - Random feature subspace selection
     - Optional out-of-bag (OOB) sample tracking
     """
-    def __init__(self,
-                 data: np.ndarray,
-                 labels: np.ndarray,
-                 n_bags: int,
-                 bag_size: Optional[int] = None,
-                 seed: Optional[int] = None,
-                 oob: bool = False):
+
+    def __init__(
+        self,
+        data: np.ndarray,
+        labels: np.ndarray,
+        n_bags: int,
+        bag_size: Optional[int] = None,
+        seed: Optional[int] = None,
+        oob: bool = False,
+    ):
         data = np.asarray(data)
         labels = np.asarray(labels)
 
@@ -55,17 +58,9 @@ class BootstrapSampler:
 
     def _make_bag(self) -> _Bag:
         # Feature subspace
-        features = self.rng.choice(
-            self.num_features,
-            size=self.max_features,
-            replace=False
-        )
+        features = self.rng.choice(self.num_features, size=self.max_features, replace=False)
         # Bootstrap rows
-        indices = self.rng.choice(
-            self.n,
-            size=self.bag_size,
-            replace=True
-        )
+        indices = self.rng.choice(self.n, size=self.bag_size, replace=True)
 
         oob_indices = None
         if self.oob:

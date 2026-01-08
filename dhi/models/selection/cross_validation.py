@@ -5,7 +5,12 @@ from typing import Optional, Tuple, List, Iterator
 
 
 class KFoldCVSplitter:
-    def __init__(self, n_splits: int = 5, shuffle: bool = False, random_state: Optional[int] = None):
+    def __init__(
+        self,
+        n_splits: int = 5,
+        shuffle: bool = False,
+        random_state: Optional[int] = None,
+    ):
         self.n_splits = n_splits
         self.shuffle = shuffle
         self.random_state = random_state
@@ -30,7 +35,12 @@ class KFoldCVSplitter:
 
 
 class StratifiedKFoldCVSplitter:
-    def __init__(self, n_splits: int = 5, shuffle: bool = False, random_state: Optional[int] = None):
+    def __init__(
+        self,
+        n_splits: int = 5,
+        shuffle: bool = False,
+        random_state: Optional[int] = None,
+    ):
         self.n_splits = n_splits
         self.shuffle = shuffle
         self.random_state = random_state
@@ -73,4 +83,3 @@ class StratifiedKFoldCVSplitter:
             mask[val_idx] = False
             train_idx = all_idx[mask]
             yield train_idx, val_idx
-
