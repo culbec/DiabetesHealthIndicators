@@ -25,7 +25,6 @@ class BootstrapSampler:
                  data: np.ndarray,
                  labels: np.ndarray,
                  n_bags: int,
-                 bootstrap_features: bool = False,
                  bag_size: Optional[int] = None,
                  seed: Optional[int] = None,
                  oob: bool = False):
@@ -40,7 +39,6 @@ class BootstrapSampler:
         self.n_bags = n_bags
 
         self.num_features = data.shape[1]
-        self.bootstrap_features = bootstrap_features # should be kept as False for Random Forest standard implementation
         self.max_features = np.sqrt(self.num_features).astype(int)
 
         self.seed = seed
@@ -60,7 +58,7 @@ class BootstrapSampler:
         features = self.rng.choice(
             self.num_features,
             size=self.max_features,
-            replace=self.bootstrap_features
+            replace=False
         )
         # Bootstrap rows
         indices = self.rng.choice(

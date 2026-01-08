@@ -1,7 +1,7 @@
 from dhi.data.loader._base import Loader
 
 
-class DHILoader(Loader):
+class DHIDataLoader(Loader):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
 

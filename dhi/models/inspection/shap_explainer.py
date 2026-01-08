@@ -1,16 +1,17 @@
-import matplotlib.pyplot as plt
-import numpy as np
-import plotly.graph_objects as go
 import shap
+import numpy as np
+import matplotlib.pyplot as plt
+import plotly.graph_objects as go
+
 from numpy.typing import ArrayLike
 
 import dhi.constants as dconst
+from dhi.utils import get_logger
 from dhi.decorators import time_func
 from dhi.models.experiments.runner import ExperimentRunner
-from dhi.utils import get_logger
 
 
-class Explainer:
+class SHAPModelExplainer:
     def __init__(self, runner: ExperimentRunner) -> None:
         self.logger = get_logger(self.__class__.__name__)
 
@@ -26,6 +27,8 @@ class Explainer:
         feature_names: list[str],
         with_plots: bool = True,
         background_samples: int | None = 100,
+        top_k_dependence: int = 10,
+        with_interactions: bool = False,
     ) -> dconst.ShapExplanationsType:
         """
         Computes the SHAP values and interactions for the given model underneath the runner hood.
@@ -34,25 +37,35 @@ class Explainer:
         :param list[str] feature_names: The feature names
         :param bool with_plots: Whether to plot the SHAP values, defaults to True
         :param int | None background_samples: Number of background samples for KernelExplainer (uses kmeans clustering).
-            Set to None to use all samples. Defaults to 100.
-        :return dconst.ShapExplanationsType: The SHAP values and interactions
+        None means all samples are used. Defaults to 100.
+        :param int top_k_dependence: Number of top features (by mean absolute SHAP) to use for dependence plots. Defaults to 10
+        :param bool with_interactions: Whether to compute and plot SHAP interaction values. Defaults to False.
+        :return ShapExplanationsType: The SHAP values and interactions
         """
         self.logger.info(
             f"Computing SHAP values for model {self._runner.model_name} with data of shape: X {X.shape} and feature names: {feature_names}"
         )
 
         # KernelExplainer expects a callable (e.g., model.predict), not the model object itself
-        # Also summarize background data using kmeans for better performance
+        # Explain probability for the positive class for classification tasks or the predicted value for regression
+        task_type = getattr(self._runner, "task_type", None)
+        use_proba = task_type == "classification" and callable(getattr(self._runner.model, "predict_proba", None))
+
         if self.explainer_config["class"] == shap.explainers.KernelExplainer:
-            model_arg = self._runner.model.predict
+            if use_proba:
+                model_arg = lambda X_in: self._runner.model.predict_proba(X_in)[:, 1]
+            else:
+                model_arg = self._runner.model.predict
             if background_samples is not None and X.shape[0] > background_samples:
                 self.logger.info(
                     f"Summarizing background data from {X.shape[0]} to {background_samples} samples using kmeans"
                 )
+                # Summarize background data using kmeans for better performance
                 background_data = shap.kmeans(X, background_samples)
             else:
                 background_data = X
         else:
+            # Other explainers can accept the model directly
             model_arg = self._runner.model
             background_data = X
 
@@ -64,21 +77,29 @@ class Explainer:
         explanation = explainer(X)
 
         shap_values = np.asarray(explanation.values)
+        # Reduce SHAP values to 2D for ranking or plotting
+        shap_matrix = shap_values
+        if shap_values.ndim == 3:
+            if shap_matrix.shape[1] == 2:
+                shap_matrix = shap_matrix[:, 1, :]  # Prefer positive class explanation for binary classification
+            else:
+                shap_matrix = np.mean(shap_matrix, axis=1)  # Average over classes for multi-class classification
 
         self.logger.info(
             f"Computing SHAP interactions for model {self._runner.model_name} with data of shape: X {X.shape} and feature names: {feature_names}"
         )
         shap_interaction_values = None
-        if not hasattr(explainer, "shap_interaction_values"):
-            self.logger.warning(f"Model {self._runner.model_name} does not support SHAP interactions")
-        else:
-            shap_interaction_values = np.asarray(explainer.shap_interaction_values(X))
+        if with_interactions:
+            if not hasattr(explainer, "shap_interaction_values"):
+                self.logger.warning(f"Model {self._runner.model_name} does not support SHAP interactions")
+            else:
+                shap_interaction_values = np.asarray(explainer.shap_interaction_values(X))
 
         if with_plots:
-            # NOTE: closing all figures of matplotlib because plotyl and matplotlib are mixing
+            # NOTE: closing all figures of matplotlib because plotly and matplotlib are mixing
             plt.clf()
             plt.close("all")
-            self.logger.info(f"Generating SHAP plots...")
+            self.logger.info(f"Generating SHAP plots")
 
             # Beeswarm plot - global model explanation
             self.logger.info(f"Beeswarm plot - global model explanation")
@@ -89,12 +110,13 @@ class Explainer:
             shap.plots.bar(explanation)
 
             # Decision plot - how did a model arrive to a decision?
+            n_samples = int(min(dconst.DHI_SHAP_SUBSAMPLE_SIZE, X.shape[0]))
             shap.decision_plot(
                 expected_value,
-                shap_values[: dconst.DHI_SHAP_SUBSAMPLE_SIZE, :],
-                features=X,
+                shap_matrix[:n_samples, :],
+                features=X[:n_samples],
                 feature_names=feature_names,
-                link="logit",
+                link="logit" if use_proba else "identity",
                 ignore_warnings=True,
             )
 
@@ -103,21 +125,26 @@ class Explainer:
             shap.plots.waterfall(explanation[0], max_display=dconst.DHI_SHAP_WATERFALL_MAX_DISPLAY)
 
             # Dependence plot - local analysis
-            self.logger.info(f"Dependence plot - local analysis")
-            for feature_name in feature_names:
-                shap.dependence_plot(
-                    ind=feature_name,
-                    shap_values=shap_values,
-                    features=X,
-                    feature_names=feature_names,
-                )
+            self.logger.info(f"Dependence plot - local analysis (top {top_k_dependence})")
+            mean_abs = np.mean(np.abs(shap_matrix), axis=0)
+            k = int(max(0, min(top_k_dependence, len(feature_names))))
+            if k > 0:
+                top_idx = np.argsort(mean_abs)[::-1][:k]
+                for j in top_idx:
+                    feature_name = feature_names[j]
+                    shap.dependence_plot(
+                        ind=feature_name,
+                        shap_values=shap_matrix,
+                        features=X,
+                        feature_names=feature_names,
+                    )
 
-            if shap_interaction_values is not None:
-                self.logger.info(f"Generating SHAP interaction plots...")
+            if with_interactions and shap_interaction_values is not None:
+                self.logger.info(f"Generating SHAP interaction plots")
 
                 shap.summary_plot(shap_interaction_values, X)
 
-                # Interaction anaylsis plot
+                # Interaction analysis plot
                 self.logger.info(
                     f"Interaction values: {shap_interaction_values.shape} | Max: {np.max(shap_interaction_values)} | Min: {np.min(shap_interaction_values)} | Mean: {np.mean(shap_interaction_values)} | Std: {np.std(shap_interaction_values)}"
                 )
@@ -144,6 +171,6 @@ class Explainer:
 
                 fig.show()
 
-            self.logger.info("Plotting of SHAP interaction analysis completed successfully")
+            self.logger.info("SHAP plotting completed successfully")
 
         return shap_values, shap_interaction_values

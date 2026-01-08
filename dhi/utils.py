@@ -7,7 +7,7 @@ from dhi.constants import (
     DHI_LOGGING_FORMAT,
     DHI_LOGGING_LOG_LEVEL,
     DHI_LOGGING_MAX_BYTES,
-    DHI_SUPPORTED_EXT_FTYPE,
+    DHI_SUPPORTED_EXT_FILE_TYPE,
 )
 
 
@@ -45,4 +45,4 @@ def get_filetype(file_path: pathlib.Path) -> str | None:
     if not file_path.exists():
         return None
 
-    return DHI_SUPPORTED_EXT_FTYPE.get(file_path.suffix.lower().lstrip("."))
+    return DHI_SUPPORTED_EXT_FILE_TYPE.get(file_path.suffix.lower().lstrip("."))

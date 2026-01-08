@@ -5,7 +5,7 @@ from sklearn.manifold import TSNE
 from umap import UMAP
 
 import dhi.constants as dconst
-from dhi.data.visualization.visualizer import plot2d, plot3d
+from dhi.data.visualization.feature_plots import plot2d, plot3d
 from dhi.utils import get_logger
 
 logger = get_logger(__name__)

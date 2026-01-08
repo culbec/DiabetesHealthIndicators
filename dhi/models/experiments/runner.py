@@ -1,20 +1,18 @@
 import json
 import joblib
 import pathlib
-
 import numpy as np
-import skops.io as sio
 
 from copy import deepcopy
 from typing import Optional
 from numpy.typing import ArrayLike
 
-from sklearn.model_selection import GridSearchCV
-
 import dhi.constants as dconst
+
 from dhi.utils import get_logger
 from dhi.decorators import time_func
 from dhi.models.eval.scorer import Scorer
+from dhi.models.selection.grid_search import GridSearchCVOptimizer
 
 
 class ExperimentRunner:
@@ -27,11 +25,7 @@ class ExperimentRunner:
         assert (
                 self.model_name in dconst.DHI_ML_MODEL_REGISTRY
         ), f"model_name must be one of {list(dconst.DHI_ML_MODEL_REGISTRY.keys())}"
-        model_cls, self.task_type = dconst.DHI_ML_MODEL_REGISTRY[self.model_name]
-
-        # TODO: review the use of this arg for different serialization behavior
-        self.model_type = kwargs.get("model_type", "sklearn").lower()
-        assert self.model_type in ("sklearn", "scratch"), "model_type must be either 'sklearn' or 'scratch'"
+        self.model_cls, self.task_type = dconst.DHI_ML_MODEL_REGISTRY[self.model_name]
 
         self.save_path = kwargs.get("save_path", None)
         assert self.save_path is None or isinstance(self.save_path, (str, pathlib.Path)), "save_path must be a string or pathlib.Path"
@@ -45,6 +39,12 @@ class ExperimentRunner:
                 pathlib.Path(self.metrics_path) / f"{self.model_name}_metrics.json"
         ) if self.metrics_path is not None else None
 
+        self.load_path = kwargs.get("load_path", None)
+        assert self.load_path is None or isinstance(self.load_path, (str, pathlib.Path)), "load_path must be a string or pathlib.Path"
+        self.load_path = (
+                pathlib.Path(self.load_path) / f"{self.model_name}.pkl"
+        ) if self.load_path is not None else None
+
         self.params = kwargs.get("params", {})
         assert isinstance(self.params, dict), "params must be a dictionary"
 
@@ -55,7 +55,9 @@ class ExperimentRunner:
         assert isinstance(self.param_grid, dict), "param_grid must be a dictionary"
 
         # Initializing the model instance
-        self.model = model_cls(**self.params)
+        self.model = self.model_cls(**self.params)
+        if self.load_path is not None:
+            self._load_model()
 
         required_methods = ("fit", "predict")
         for method in required_methods:
@@ -76,30 +78,33 @@ class ExperimentRunner:
             self.save_path.parent.mkdir(parents=True, exist_ok=True)
 
         try:
-            if self.model_type == "sklearn":
-                sio.dump(self.model, self.save_path)
-            else:
-                joblib.dump(self.model, self.save_path)
+            joblib.dump(self.model, self.save_path)
             self.logger.info(f"Model saved to {self.save_path}")
         except Exception as e:
             self.logger.error(f"Failed to save model to {self.save_path}: {e}")
 
-    # TODO: add utility method to load trained model from path
+    @time_func
+    def _load_model(self) -> None:
+        if not self.load_path.exists():
+            raise FileNotFoundError(f"Model file not found at {self.load_path}")
+
+        self.model = joblib.load(self.load_path)
 
     @time_func
     def score(self, X: ArrayLike, y: ArrayLike) -> dict[str, float]:
+        y_true = np.asarray(y).ravel()
         y_pred, y_proba = self.predict(X), self.predict_proba(X)
 
         scorer = Scorer(self.model, self.task_type)
         try:
-            metrics = scorer.score(y, y_pred, y_proba)
+            metrics = scorer.score(y_true, y_pred, y_proba)
         except Exception as e:
             self.logger.error(f"Failed to compute evaluation metrics: {e}")
             metrics = {}
 
         self.logger.info(f"Metrics of {self.model_name}: {metrics}")
 
-        if metrics.keys() != {None} and self.metrics_path:
+        if metrics and self.metrics_path:
             if not self.metrics_path.parent.exists():
                 self.logger.warning(
                     f"Metrics path parent directory does not exist, creating it: {self.metrics_path.parent}"
@@ -118,27 +123,31 @@ class ExperimentRunner:
         Fits the instance model to the passed data.
 
         The `with_cv` parameter indicates if the model should be fitted with cross-validation.
-
-        The cross-validation is performed using `GridSearchCV`, attempting to also
-        optimize the hyperparameters of the model.
+        The cross-validation is performed together with hyperparameter optimization using Grid Search.
 
         :param ArrayLike X: The input data
         :param ArrayLike y: The target data
         :param bool with_cv: Whether to perform cross-validation, defaults to False
         """
-        # TODO: add custom CV and HPO support
         if with_cv:
             self.logger.info(
-                f"Fitting {self.model_name} on data with shape {X.shape} and target with shape {y.shape} with cross-validation"
+                f"Fitting {self.model_name} on data with shape {X.shape} and target with shape {y.shape} with cross-validation and hyperparameter optimization"
             )
             self.logger.info(
-                f"Performing cross-validation with params: {self.cv_params}\nand param_grid: {self.param_grid}")
+                f"Performing cross-validation with params: {self.cv_params}\nand hyperparameter optimization grid: {self.param_grid}")
 
-            grid = GridSearchCV(self.model, self.param_grid, **self.cv_params)
-            grid.fit(X, y)
+            optimizer = GridSearchCVOptimizer(
+                model_cls=self.model_cls,
+                task_type=self.task_type,
+                base_params=self.params,
+                param_grid=self.param_grid,
+                cv_params=self.cv_params,
+            )
+            optimizer.fit(X, y)
 
-            self.logger.info(f"Best estimator: {grid.best_estimator_}")
-            self.model = grid.best_estimator_
+            self.logger.info(f"Best hyperparameters: {optimizer.best_params_}")
+            self.logger.info(f"Best cross-validation {optimizer.refit_metric_} score: {optimizer.best_score_}")
+            self.model = optimizer.best_estimator_
         else:
             self.logger.info(
                 f"Fitting {self.model_name} on data with shape {X.shape} and target with shape {y.shape} without cross-validation"
