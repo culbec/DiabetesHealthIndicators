@@ -57,7 +57,7 @@ class ExperimentRunner:
         # Initializing the model instance
         self.model = self.model_cls(**self.params)
         if self.load_path is not None:
-            self._load_model(self.load_path)
+            self._load_model()
 
         required_methods = ("fit", "predict")
         for method in required_methods:

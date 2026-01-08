@@ -161,7 +161,7 @@ def f1_score(
             "F1 score on multi-class data cannot be 'binary' solved, use 'micro', 'macro', or 'weighted' average instead"
         )
 
-    y_true, y_pred = np.astype(y_true, int), np.astype(y_pred, int)
+    y_true, y_pred = np.asarray(y_true).astype(int), np.asarray(y_pred).astype(int)
 
     if average == "binary":
         pos = 1
@@ -287,8 +287,10 @@ def precision_score(
     y_true, y_pred = np.asarray(y_true).astype(int), np.asarray(y_pred).astype(int)
 
     if average == "binary":
-        tp = np.sum((y_true == unique_classes[0]) & (y_pred == unique_classes[0]))
-        fp = np.sum((y_true == unique_classes[0]) & (y_pred == unique_classes[1]))
+        pos = 1
+        tp = np.sum((y_true == pos) & (y_pred == pos))
+        fp = np.sum((y_true != pos) & (y_pred == pos))
+
         precision = tp / (tp + fp) if tp + fp > 0 else 0.0
         return float(precision)
     elif average in ["micro", "macro", "weighted"]:
@@ -296,6 +298,7 @@ def precision_score(
         for cls in unique_classes:
             tp = np.sum((y_true == cls) & (y_pred == cls))
             fp = np.sum((y_true != cls) & (y_pred == cls))
+
             precision = tp / (tp + fp) if tp + fp > 0 else 0.0
             precision_scores.append(precision)
             supports.append(np.sum(y_true == cls))
@@ -336,8 +339,10 @@ def recall_score(
     y_true, y_pred = np.asarray(y_true).astype(int), np.asarray(y_pred).astype(int)
 
     if average == "binary":
-        tp = np.sum((y_true == unique_classes[0]) & (y_pred == unique_classes[0]))
-        fn = np.sum((y_true == unique_classes[0]) & (y_pred == unique_classes[1]))
+        pos = 1
+        tp = np.sum((y_true == pos) & (y_pred == pos))
+        fn = np.sum((y_true == pos) & (y_pred != pos))
+
         recall = tp / (tp + fn) if tp + fn > 0 else 0.0
         return float(recall)
     elif average in ["micro", "macro", "weighted"]:
@@ -345,6 +350,7 @@ def recall_score(
         for cls in unique_classes:
             tp = np.sum((y_true == cls) & (y_pred == cls))
             fn = np.sum((y_true == cls) & (y_pred != cls))
+
             recall = tp / (tp + fn) if tp + fn > 0 else 0.0
             recall_scores.append(recall)
             supports.append(np.sum(y_true == cls))

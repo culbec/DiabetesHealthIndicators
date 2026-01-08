@@ -160,6 +160,8 @@ class GridSearchCVOptimizer:
         candidates = _expand_param_grid(self.param_grid)
 
         for params in candidates:
+            # TODO: fold scores can be used for reporting a statistical analysis of the results, by computing standard deviation and confidence intervals
+            # TODO: these metrics will be implemented in the statistics module and imported accordingly
             fold_scores: List[float] = []
             fold_metrics: List[Dict[str, float]] = []
 
