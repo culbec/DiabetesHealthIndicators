@@ -30,7 +30,7 @@ def reduce_memory_usage(
     munit = dconst.DHI_SIZES_BYTES[memory_usage_unit]
 
     start_mem = df.memory_usage().sum() / munit
-    reporter_info(f"Initial memory usage of dataframe is {start_mem:.2f} {memory_usage_unit}")
+    reporter_info(f"Initial memory usage of dataframe is {start_mem:.8f} {memory_usage_unit}")
 
     df_optimized = df.copy()
 
@@ -56,7 +56,7 @@ def reduce_memory_usage(
             reporter_warning(f"Column '{col}' is not numeric and was not downcasted")
 
     end_mem = df_optimized.memory_usage().sum() / munit
-    reporter_info(f"Final memory usage of dataframe is {end_mem:.2f} {memory_usage_unit}")
+    reporter_info(f"Final memory usage of dataframe is {end_mem:.8f} {memory_usage_unit}")
     reporter_info(f"Decreased memory usage by {(start_mem - end_mem) / start_mem * 100:.2f}%")
 
     return df_optimized

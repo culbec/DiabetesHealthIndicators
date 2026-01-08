@@ -77,11 +77,11 @@ class SHAPModelExplainer:
         # Up-casting the input data, if float16 is passed
         # shap doesn't do this automatically, and the code fails with NotImplementedError
         X_train = np.asarray(X_train)
-        if X_train.dtype == "float16":
-            X_train = np.asarray(X_train, dtype=np.float32)
+        if X_train.dtype == np.float16:
+            X_train = X_train.astype(np.float32)
         X_test = np.asarray(X_test)
-        if X_test.dtype == "float16":
-            X_test = np.asarray(X_test, dtype=np.float32)
+        if X_test.dtype == np.float16:
+            X_test = X_test.astype(np.float32)
 
         # Using an Independent masker in order to mask the samples
         # which will be used to explain the reasoning of the model

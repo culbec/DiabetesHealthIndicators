@@ -1,6 +1,6 @@
 from dataclasses import dataclass
 from itertools import product
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Mapping, Optional, Set
 
 import numpy as np
 from numpy.typing import ArrayLike
@@ -13,49 +13,47 @@ from dhi.models.selection.cross_validation import (
     StratifiedKFoldCVSplitter,
 )
 
+METRIC_ALIAS_MAP: Mapping[str, str] = {
+    "rmse": "root_mean_squared_error",
+    "mse": "mean_squared_error",
+    "mae": "mean_absolute_error",
+}
+
+METRIC_MINIMIZE_SET: Set[str] = {
+    # Regression metrics where lower is better
+    "max_error",
+    "mean_absolute_error",
+    "mean_squared_error",
+    "median_absolute_error",
+    "root_mean_squared_error",
+    "mean_squared_log_error",
+    "root_mean_squared_log_error",
+    # Classification metrics where lower is better
+    "log_loss",
+}
+
+METRIC_MAXIMIZE_SET: Set[str] = {
+    # Regression metrics where higher is better
+    "r2",
+    "explained_variance",
+    # Classification metrics where higher is better
+    "accuracy",
+    "f1",
+    "precision",
+    "recall",
+    "fbeta",
+    "roc_auc",
+    "average_precision",
+}
+
 
 def _metric_optimization_direction(task_type: str, metric: str, explicit: Optional[bool]) -> bool:
     if explicit is not None:
         return bool(explicit)
 
-    metric_name = metric.lower()
-    alias_map = {
-        "rmse": "root_mean_squared_error",
-        "mse": "mean_squared_error",
-        "mae": "mean_absolute_error",
-    }  # Support for common aliases if using different scoring methods
-    metric_name = alias_map.get(metric_name, metric_name)
-
-    minimize = {
-        # Regression metrics where lower is better
-        "max_error",
-        "mean_absolute_error",
-        "mean_squared_error",
-        "median_absolute_error",
-        "root_mean_squared_error",
-        "mean_squared_log_error",
-        "root_mean_squared_log_error",
-        # Classification metrics where lower is better
-        "log_loss",
-    }
-
-    maximize = {
-        # Regression metrics where higher is better
-        "r2",
-        "explained_variance",
-        # Classification metrics where higher is better
-        "accuracy",
-        "f1",
-        "precision",
-        "recall",
-        "fbeta",
-        "roc_auc",
-        "average_precision",
-    }
-
-    if metric_name in minimize:
+    if metric in METRIC_MINIMIZE_SET:
         return False
-    if metric_name in maximize:
+    if metric in METRIC_MAXIMIZE_SET:
         return True
 
     # Fallback assumption based on task type
@@ -117,7 +115,9 @@ class GridSearchCVOptimizer:
         self.param_grid = dict(param_grid or {})
         self.cv_params = dict(cv_params or {})
 
-        self.refit_metric_ = str(self.cv_params.get("refit_metric", "f1" if task_type == "classification" else "rmse"))
+        default_refit_metric = "f1" if task_type == "classification" else "rmse"
+        self.refit_metric_ = str(self.cv_params.get("refit_metric", default_refit_metric)).lower()
+        self.refit_metric_ = METRIC_ALIAS_MAP.get(self.refit_metric_, self.refit_metric_)
         self.greater_is_better_ = _metric_optimization_direction(
             task_type, self.refit_metric_, self.cv_params.get("greater_is_better")
         )

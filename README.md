@@ -42,3 +42,11 @@ python ./.datasets/download_datasets.py
 ```
 
 - setup done!
+
+## Code Formatting
+
+This project ships `black` as its default code formatter. To format the code, run the following command in the project root:
+
+```cmd
+poetry run python3 -m black <path>
+```

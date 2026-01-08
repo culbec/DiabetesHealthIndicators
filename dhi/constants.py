@@ -1,6 +1,6 @@
 import logging
 import pathlib
-from typing import Any, Mapping, Tuple, Type, TypeAlias, Union
+from typing import Any, Mapping, Tuple, TypeAlias, Union
 
 import numpy as np
 import shap
@@ -121,10 +121,10 @@ DHI_DEFAULT_F_BETA_SCORE_BETA: float = 2.0
 # ML CONSTANTS
 ##############################
 
-ModelType: TypeAlias = SVR | SVR_SCRATCH | RF | RF_SCRATCH
+ModelType: TypeAlias = Union[SVR, SVR_SCRATCH, RF, RF_SCRATCH]
 
 # "model_name": (model_class, task_type)
-DHI_ML_MODEL_REGISTRY: Mapping[str, Tuple[Type[ModelType], str]] = {
+DHI_ML_MODEL_REGISTRY: Mapping[str, Tuple[ModelType, str]] = {
     "svr_sklearn": (SVR, "regression"),
     "svr_scratch": (SVR_SCRATCH, "regression"),
     "rf_sklearn": (RF, "classification"),

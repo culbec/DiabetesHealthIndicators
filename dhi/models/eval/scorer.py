@@ -1,4 +1,4 @@
-from typing import Mapping, Optional, TypeAlias, Union
+from typing import Mapping, Optional
 
 import numpy as np
 import pandas as pd

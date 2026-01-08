@@ -187,11 +187,11 @@ class SVR_(BaseEstimator, RegressorMixin):
         self.phi_cache_: np.ndarray = np.asarray([])
         self.errors_: np.ndarray = np.asarray([])
 
-        self.alpha_: np.ndarray = np.ndarray([])
+        self.alpha_: np.ndarray = np.asarray([])
         self.alpha_star_: np.ndarray = np.asarray([])
         self.dual_coef_: np.ndarray = np.asarray([])
 
-        self.support_: np.ndarray = np.ndarray([])
+        self.support_: np.ndarray = np.asarray([])
         self.support_vectors_: np.ndarray = np.asarray([])
 
         self.kernel_stats_: Optional[dict[str, Any]] = None
@@ -199,7 +199,7 @@ class SVR_(BaseEstimator, RegressorMixin):
         self.iters_: Optional[int] = None
         self.ok_steps_: Optional[int] = None
         self.fail_steps_: Optional[int] = None
-        self.active_set_: np.ndarray = np.ndarray([])
+        self.active_set_: np.ndarray = np.asarray([])
 
     def __getstate__(self) -> dict:
         """
@@ -701,7 +701,7 @@ class SVR_(BaseEstimator, RegressorMixin):
         if self.shrinking:
             self.active_set_ = np.ones(2 * self.n_samples_, dtype=bool)
         else:
-            self.active_set_ = np.ndarray([])
+            self.active_set_ = np.asarray([])
 
         while passes < self.max_passes and iters < self.max_iter:
             # Unshrink near iteration limit to catch late violations
@@ -838,7 +838,7 @@ class SVR_(BaseEstimator, RegressorMixin):
             self.kernel_matrix_ = self._compute_kernel_matrix(X, X)
             self.logger.debug("Kernel matrix cached")
         else:
-            self.kernel_matrix_ = np.ndarray([])
+            self.kernel_matrix_ = np.asarray([])
             self.logger.debug("Not caching kernel matrix")
 
         # Initial errors are the negative of the target data

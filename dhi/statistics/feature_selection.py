@@ -1,4 +1,4 @@
-from typing import Any, Mapping, TypeAlias
+from typing import Any, Mapping, Optional, TypeAlias
 
 import numpy as np
 import pandas as pd
@@ -279,7 +279,7 @@ def univariate_feature_selection(
     label_columns: list[str],
     target_column: str,
     mode: str = "percentile",
-    params: Mapping[str, Any] = {},
+    params: Optional[Mapping[str, Any]] = None,
 ) -> None:
     """
     Performs a univariate feature selection on the dataframe.
@@ -291,8 +291,7 @@ def univariate_feature_selection(
     :param list[str] label_columns: The columns to remove from the dataframe
     :param str target_column: The column to perform the univariate feature selection on
     :param str mode: The mode to perform the univariate feature selection on, defaults to "percentile"
-    :param Mapping[str, Any] params: The parameters to perform the univariate feature selection on, defaults to {}
-    :param list[str] | None columns: The columns to perform the univariate feature selection on, defaults to None
+    :param Optional[Mapping[str, Any]] params: The parameters to perform the univariate feature selection on, defaults to None
     """
     if df.empty:
         logger.warning("The dataframe is empty, skipping univariate feature selection")
@@ -324,7 +323,7 @@ def univariate_feature_selection(
         logger.warning(f"Invalid mode: {mode}, using default mode: {dconst.DHI_FEATURE_SELECTION_DEFAULT_MODE}")
         mode = dconst.DHI_FEATURE_SELECTION_DEFAULT_MODE
 
-    params = dconst.DHI_FEATURE_SELECTION_MODES[mode] if not params else params
+    params = dconst.DHI_FEATURE_SELECTION_MODES[mode] if params is None else params
 
     selector = skfs.GenericUnivariateSelect(score_func=score_func, mode=mode)  # pyright: ignore[reportArgumentType]
     selector.set_params(**params)
