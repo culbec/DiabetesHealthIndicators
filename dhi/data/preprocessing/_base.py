@@ -1,7 +1,6 @@
 import pandas as pd
 import dhi.data.constants as dconst
 
-from dhi.utils import get_logger
 from dhi.decorators import time_func
 from dhi.data.utils import reduce_memory_usage
 
@@ -11,7 +10,11 @@ class Preprocessor:
         self._init_from_kwargs(**kwargs)
 
     def _init_from_kwargs(self, **kwargs) -> None:
+        from dhi.utils import get_logger
+
         self.logger = get_logger(self.__class__.__name__)
+
+        self.is_fitted_ = False
 
         # Numerical features
         self.numerical_features = kwargs.get("numerical_features", {})
@@ -350,7 +353,9 @@ class Preprocessor:
         :param pd.DataFrame df: The DataFrame to fit and transform
         :return pd.DataFrame: The transformed DataFrame
         """
-        return self._apply_preprocessing_steps(df, fit=True)
+        df = self._apply_preprocessing_steps(df, fit=True)
+        self.is_fitted_ = True
+        return df
 
     @time_func
     def transform(self, df: pd.DataFrame) -> pd.DataFrame:
@@ -360,7 +365,8 @@ class Preprocessor:
         :param pd.DataFrame df: The DataFrame to transform
         :return pd.DataFrame: The transformed DataFrame
         """
-        if not self.numerical_scalers and not self.categorical_encoders:
-            self.logger.warning("Preprocessor instance has not been fitted yet. Proceeding with fit during transform.")
-            return self._apply_preprocessing_steps(df, fit=True)
+        if not self.is_fitted_:
+            raise RuntimeError(
+                "Preprocessor instance has not been fitted before calling transform(). Fit to dataset first."
+            )
         return self._apply_preprocessing_steps(df, fit=False)

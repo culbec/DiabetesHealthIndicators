@@ -1,7 +1,7 @@
 import json
 import pathlib
 from copy import deepcopy
-from typing import Mapping, Optional
+from typing import Mapping, Optional, Dict, Any
 
 import joblib
 import numpy as np
@@ -15,8 +15,9 @@ from dhi.utils import get_logger
 
 
 class ExperimentRunner:
-    def __init__(self, **kwargs) -> None:
-        self._init_from_kwargs(**kwargs)
+    def __init__(self, preprocessor_config: Dict[str, Any], ml_config: Dict[str, Any]) -> None:
+        self._preprocessor_config = preprocessor_config
+        self._init_from_kwargs(**ml_config)
 
     def _init_from_kwargs(self, **kwargs) -> None:
         self._model_name = kwargs.get("model_name", None)
@@ -160,6 +161,7 @@ class ExperimentRunner:
                 base_params=self._params,
                 param_grid=self._param_grid,
                 cv_params=self._cv_params,
+                preprocessor_config=self._preprocessor_config,
             )
             optimizer.fit(X_, y_)
 

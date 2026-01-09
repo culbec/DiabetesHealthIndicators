@@ -36,6 +36,15 @@ pyright = ">=1.1.407,<2.0.0"
 [tool.black]
 line-length = 119
 target-version = ["py312"]
+exclude = '''
+/(
+    \.git
+  | \.venv
+  | notebooks
+  | .datasets
+  | .models
+)/
+'''
 
 [build-system]
 requires = ["poetry-core>=2.0.0,<3.0.0"]

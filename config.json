@@ -11,6 +11,7 @@
             ]
         },
         "preprocessor": {
+            "type": "dhi_default",
             "numerical_features": {
                 "scaler": {
                     "type": "robust_scaler",
