@@ -1,15 +1,15 @@
 import logging
 import pathlib
-from typing import Any, Mapping, Tuple, TypeAlias, Union
+from typing import Any, Mapping, Tuple, Type, TypeAlias, Union
 
-import shap
 import numpy as np
-
-from dhi.data.preprocessing.dhi_preprocessor import DHIDataPreprocessor as DHI_PREPROCESSOR_DEFAULT
-
+import shap
 from sklearn.ensemble import RandomForestClassifier as RF
 from sklearn.svm import SVR
 
+from dhi.data.preprocessing.dhi_preprocessor import (
+    DHIDataPreprocessor as DHI_PREPROCESSOR_DEFAULT,
+)
 from dhi.models.random_forest import RandomForest_ as RF_SCRATCH
 from dhi.models.svr import SVR_ as SVR_SCRATCH
 
@@ -127,7 +127,7 @@ DHI_DEFAULT_F_BETA_SCORE_BETA: float = 2.0
 ModelType: TypeAlias = Union[SVR, SVR_SCRATCH, RF, RF_SCRATCH]
 
 # "model_name": (model_class, task_type)
-DHI_ML_MODEL_REGISTRY: Mapping[str, Tuple[ModelType, str]] = {
+DHI_ML_MODEL_REGISTRY: Mapping[str, Tuple[Type[ModelType], str]] = {
     "svr_sklearn": (SVR, "regression"),
     "svr_scratch": (SVR_SCRATCH, "regression"),
     "rf_sklearn": (RF, "classification"),
@@ -147,6 +147,6 @@ DHI_ML_EXPLAINER_REGISTRY: Mapping[str, Mapping[str, Any]] = {
     },
 }
 
-PreprocessorType: TypeAlias = Union[DHI_PREPROCESSOR_DEFAULT]
+PreprocessorType: TypeAlias = Type[DHI_PREPROCESSOR_DEFAULT]
 
 DHI_PREPROCESSOR_REGISTRY: Mapping[str, PreprocessorType] = {"dhi_default": DHI_PREPROCESSOR_DEFAULT}

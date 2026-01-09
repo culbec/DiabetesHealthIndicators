@@ -31,7 +31,7 @@ class Preprocessor:
         # Nan category
         self.nan_category = kwargs.get("nan_category", dconst.DHI_PREPROCESSOR_NAN_CATEGORY)
         if not isinstance(self.nan_category, str):
-            self.logger.warning(f"nan_category must be a string, defaulting to {dconst.DHI_PREPROCESSOR_NAN_CATEGORY}")
+            self.logger.debug(f"nan_category must be a string, defaulting to {dconst.DHI_PREPROCESSOR_NAN_CATEGORY}")
             self.nan_category = dconst.DHI_PREPROCESSOR_NAN_CATEGORY
 
         # Numerical to categorical features mapping
@@ -95,7 +95,7 @@ class Preprocessor:
 
         for feature, mapping in self.numerical_to_categorical_features.items():
             if feature not in df.columns:
-                self.logger.warning(f"Feature {feature} not found in DataFrame")
+                self.logger.debug(f"Feature {feature} not found in DataFrame")
                 continue
 
             # Convert column to object dtype first to avoid FutureWarning
@@ -135,7 +135,7 @@ class Preprocessor:
             else:
                 most_common_value = df_nan_handled[feature].mode(dropna=True)
                 if most_common_value is None or most_common_value.empty:
-                    self.logger.warning(f"No most common value found for feature {feature}, skipping NaN handling")
+                    self.logger.debug(f"No most common value found for feature {feature}, skipping NaN handling")
                     continue
                 df_nan_handled[feature] = df_nan_handled[feature].fillna(most_common_value.iloc[0])
 
@@ -176,7 +176,7 @@ class Preprocessor:
         ]
 
         if non_compliant_features:
-            self.logger.warning(
+            self.logger.debug(
                 f"The following features are not numerical and will be skipped: {non_compliant_features}"
             )
             features_to_transform = [
@@ -184,7 +184,7 @@ class Preprocessor:
             ]
 
         if not features_to_transform:
-            self.logger.warning("No features to transform")
+            self.logger.debug("No features to transform")
             return df
 
         df_numerical_transformed = df.copy()
@@ -195,7 +195,7 @@ class Preprocessor:
                 scaler_instance = dconst.DHI_PREPROCESSOR_NUMERICAL_SCALERS[scaler_type](
                     **scaler_params
                 )  # pyright: ignore[reportCallIssue]
-                fitted_scaler_instance = scaler_instance.fit(
+                fitted_scaler_instance = scaler_instance.fit(  # pyright: ignore[reportAttributeAccessIssue]
                     feature_values
                 )  # pyright: ignore[reportAttributeAccessIssue]
                 self.numerical_scalers[feature_to_transform] = fitted_scaler_instance
@@ -241,13 +241,13 @@ class Preprocessor:
         non_compliant_features = [feature for feature in features_to_encode if feature not in object_dtype_features]
 
         if non_compliant_features:
-            self.logger.warning(
+            self.logger.debug(
                 f"The following features are not categorical and will be skipped: {non_compliant_features}"
             )
             features_to_encode = [feature for feature in features_to_encode if feature not in non_compliant_features]
 
         if not features_to_encode:
-            self.logger.warning("No features to encode")
+            self.logger.debug("No features to encode")
             return df
 
         df_categorical_encoded = df.copy()
@@ -292,7 +292,7 @@ class Preprocessor:
         :raises ValueError: If the features are not a string, list of strings, or None
         """
         if not features:
-            self.logger.warning("No features provided, inverse transforming all features")
+            self.logger.debug("No features provided, inverse transforming all features")
             features = list(self.numerical_scalers.keys() | self.categorical_encoders.keys())
         elif isinstance(features, str):
             features = [features]
@@ -309,13 +309,13 @@ class Preprocessor:
             elif feature in self.categorical_encoders:
                 scaler_instance = self.categorical_encoders[feature]
             else:
-                self.logger.warning(
+                self.logger.debug(
                     f"Feature {feature} not found in the numerical scaling or categorical encoding data"
                 )
                 continue
 
             if not getattr(scaler_instance, "inverse_transform", None):
-                self.logger.warning(
+                self.logger.debug(
                     f"Scaler/Encoder {scaler_instance.__class__.__name__} has no inverse transform method"
                 )
                 continue
