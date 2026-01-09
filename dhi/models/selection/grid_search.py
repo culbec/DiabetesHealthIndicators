@@ -1,19 +1,21 @@
 import json
 from dataclasses import dataclass
 from itertools import product
-from typing import Any, Dict, List, Mapping, Optional, Set
+from typing import Any, Dict, List, Mapping, Optional, Set, cast
 
 import numpy as np
+import pandas as pd
+from joblib import Parallel, delayed
 from numpy.typing import ArrayLike
 from sklearn.base import BaseEstimator
 
 import dhi.constants as dconst
-from dhi.utils import get_logger
 from dhi.models.eval.scorer import Scorer
 from dhi.models.selection.cross_validation import (
     KFoldCVSplitter,
     StratifiedKFoldCVSplitter,
 )
+from dhi.utils import get_logger
 
 METRIC_ALIAS_MAP: Mapping[str, str] = {
     "rmse": "root_mean_squared_error",
@@ -92,6 +94,64 @@ def _as_index_array(idxs: ArrayLike) -> np.ndarray:
     return arr.astype(int, copy=False)
 
 
+def _ensure_dataframe(X: ArrayLike) -> tuple[pd.DataFrame, bool]:
+    """
+    Ensures X is a pandas DataFrame.
+
+    If X is already a DataFrame, returns it as-is with was_converted=False.
+    Otherwise, converts to DataFrame with columns named Feature_0, Feature_1, etc.
+
+    :param X: Input data (array-like or DataFrame)
+    :return: Tuple of (pandas DataFrame, was_converted flag)
+    """
+    if isinstance(X, pd.DataFrame):
+        return X, False
+
+    X_arr = np.asarray(X)
+    n_features = X_arr.shape[1] if X_arr.ndim == 2 else 1
+    columns = pd.Index([f"Feature_{i}" for i in range(n_features)])
+    return pd.DataFrame(X_arr, columns=columns), True
+
+
+def _build_preprocessor_config_for_dataframe(
+    df: pd.DataFrame,
+    base_config: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+    """
+    Builds a preprocessor config based on the DataFrame's actual column dtypes.
+
+    Detects numerical and categorical columns and populates the config accordingly.
+
+    :param df: The DataFrame to analyze
+    :param base_config: Optional base config to merge with (for scaler/encoder settings)
+    :return: Preprocessor config dict with numerical_features and categorical_features
+    """
+    numerical_cols = df.select_dtypes(include=["number"]).columns.tolist()
+    categorical_cols = df.select_dtypes(include=["object", "string", "category"]).columns.tolist()
+
+    config: Dict[str, Any] = {}
+
+    # Preserve scaler/encoder settings from base config if provided
+    if base_config:
+        num_scaler = base_config.get("numerical_features", {}).get("scaler", {})
+        cat_encoder = base_config.get("categorical_features", {}).get("encoder", {})
+    else:
+        num_scaler = {}
+        cat_encoder = {}
+
+    config["numerical_features"] = {
+        "features": numerical_cols,
+        "scaler": num_scaler,
+    }
+
+    config["categorical_features"] = {
+        "features": categorical_cols,
+        "encoder": cat_encoder,
+    }
+
+    return config
+
+
 @dataclass
 class CVParamSearchResult:
     params: Dict[str, Any]
@@ -130,6 +190,7 @@ class GridSearchCVOptimizer:
         self.n_splits = int(self.cv_params.get("n_splits", 5))
         self.shuffle = bool(self.cv_params.get("shuffle", True))
         self.random_state = self.cv_params.get("random_state", None)
+        self.n_jobs = self.cv_params.get("n_jobs", 1)
 
         self.cv_results_: List[CVParamSearchResult] = []
         self.best_params_: Dict[str, Any] = {}
@@ -171,104 +232,172 @@ class GridSearchCVOptimizer:
     def _is_better_score(self, score: float, best: float) -> bool:
         return score > best if self.greater_is_better_ else score < best
 
+    def _evaluate_candidate(
+        self,
+        params: Dict[str, Any],
+        candidate_idx: int,
+        total_candidates: int,
+        X_df: pd.DataFrame,
+        X_arr: np.ndarray,
+        y_arr: np.ndarray,
+    ) -> CVParamSearchResult:
+        """
+        Evaluates a single parameter configuration using cross-validation.
+
+        This method is designed to be called in parallel by joblib.
+
+        :param params: Parameter configuration to evaluate
+        :param candidate_idx: Index of the current candidate (1-based, for logging)
+        :param total_candidates: Total number of candidates (for logging)
+        :param X_df: Input data as pandas DataFrame (for preprocessor compatibility)
+        :param X_arr: Input features as numpy array
+        :param y_arr: Target array
+        :return: CVParamSearchResult with fold scores and metrics
+        """
+        self.logger.info("Evaluating candidate %d/%d parameters:", candidate_idx, total_candidates)
+        self.logger.info("Candidate parameters: %s", params)
+
+        splitter = self._build_splitter()
+        fold_scores: List[float] = []
+        fold_metrics: List[Dict[str, float]] = []
+
+        split_iter = splitter.split(X_arr, y_arr)
+        for fold_idx, (train_idx, val_idx) in enumerate(split_iter, start=1):
+            tr = _as_index_array(train_idx)
+            val = _as_index_array(val_idx)
+
+            self.logger.info(
+                "Fold %d/%d: training on %d samples, validating on %d samples",
+                fold_idx,
+                self.n_splits,
+                len(tr),
+                len(val),
+            )
+
+            if self._preprocessor_cls is not None and self._preprocessor_config is not None:
+                preprocessor = self._preprocessor_cls(**self._preprocessor_config)
+
+                X_tr_subset = X_df.iloc[tr].copy()
+                X_val_subset = X_df.iloc[val].copy()
+
+                X_tr_fold = np.asarray(preprocessor.fit_transform(X_tr_subset))
+                X_val_fold = np.asarray(preprocessor.transform(X_val_subset))
+            else:
+                X_tr_fold = X_arr[tr]
+                X_val_fold = X_arr[val]
+
+            estimator = self._build_estimator(params)
+            estimator.fit(X_tr_fold, y_arr[tr])
+
+            y_pred = estimator.predict(X_val_fold)
+
+            predict_proba = getattr(estimator, "predict_proba", None)
+            y_proba = (
+                np.asarray(predict_proba(X_val_fold))
+                if predict_proba is not None and callable(predict_proba)
+                else None
+            )
+
+            scorer = Scorer(estimator, self.task_type)
+            metrics = scorer.score(np.asarray(y_arr[val]).ravel(), np.asarray(y_pred).ravel(), y_proba)
+
+            if self.refit_metric_ not in metrics:
+                raise KeyError(f"Refit metric '{self.refit_metric_}' not found in computed metrics: {metrics.keys()}")
+
+            refit_score = metrics.get(self.refit_metric_)
+            if refit_score is None:
+                continue
+            score = float(refit_score)
+            fold_scores.append(score)
+            safe_metrics: Dict[str, float] = {k: float(v) for k, v in metrics.items() if v is not None}
+            fold_metrics.append(safe_metrics)
+
+            self.logger.info("Fold %d metrics: %s", fold_idx, json.dumps(safe_metrics, indent=2, sort_keys=True))
+            self.logger.info("Fold %d %s score: %.6f", fold_idx, self.refit_metric_, score)
+
+        mean_score = float(np.mean(fold_scores)) if fold_scores else float("-inf")
+        std_score = float(np.std(fold_scores, ddof=1)) if len(fold_scores) > 1 else 0.0
+
+        # Use print for real-time output in parallel workers (logger doesn't work across processes)
+        if self.n_jobs != 1:
+            params_str = ", ".join(f"{k}={v}" for k, v in params.items())
+            print(
+                f"  [Candidate {candidate_idx}/{total_candidates}] {params_str} "
+                f": {self.refit_metric_}={mean_score:.6f} +/- {std_score:.6f}"
+            )
+        else:
+            self.logger.info(
+                "Candidate %d mean %s score: %.6f +/- %.6f",
+                candidate_idx,
+                self.refit_metric_,
+                mean_score,
+                std_score,
+            )
+
+        return CVParamSearchResult(
+            params=params,
+            fold_scores=fold_scores,
+            mean_score=mean_score,
+            std_score=std_score,
+            fold_metrics=fold_metrics,
+        )
+
     def fit(self, X: ArrayLike, y: ArrayLike) -> "GridSearchCVOptimizer":
         X_arr = np.asarray(X)
         y_arr = np.asarray(y)
 
-        splitter = self._build_splitter()
+        # Ensure X is a DataFrame for preprocessor compatibility
+        X_df, was_converted = _ensure_dataframe(X)
+
+        # If X was converted from array, build a new preprocessor config based on actual dtypes
+        if was_converted and self._preprocessor_cls is not None:
+            self._preprocessor_config = _build_preprocessor_config_for_dataframe(X_df, self._preprocessor_config)
+            self.logger.info(
+                "Built preprocessor config for array input: %d numerical, %d categorical features",
+                len(self._preprocessor_config.get("numerical_features", {}).get("features", [])),
+                len(self._preprocessor_config.get("categorical_features", {}).get("features", [])),
+            )
+
         candidates = _expand_param_grid(self.param_grid)
+        total_candidates = len(candidates)
 
         self.logger.info(
-            "Starting Grid Search optimization: %d candidate parameter sets, %d-fold cross-validation",
-            len(candidates),
+            "Starting Grid Search optimization: %d candidate parameter sets, %d-fold cross-validation, n_jobs=%s",
+            total_candidates,
             self.n_splits,
+            self.n_jobs,
         )
 
-        for candidate_idx, params in enumerate(candidates, start=1):
-            # TODO: fold scores can be used for reporting a statistical analysis of the results, by computing standard deviation and confidence intervals
-            # TODO: these metrics will be implemented in the statistics module and imported accordingly
-            self.logger.info("Evaluating candidate %d/%d parameters:", candidate_idx, len(candidates))
-            self.logger.info("Candidate parameters: %s", params)
+        # Parallel evaluation of parameter candidates using joblib
+        # n_jobs=-1 uses all available CPUs, n_jobs=1 runs sequentially
+        # verbose=10 shows progress for each completed task
+        parallel_verbose = 10 if self.n_jobs != 1 else 0
+        results = cast(
+            List[CVParamSearchResult],
+            Parallel(n_jobs=self.n_jobs, verbose=parallel_verbose)(
+                delayed(self._evaluate_candidate)(params, idx, total_candidates, X_df, X_arr, y_arr)
+                for idx, params in enumerate(candidates, start=1)
+            ),
+        )
 
-            fold_scores: List[float] = []
-            fold_metrics: List[Dict[str, float]] = []
-
-            split_iter = splitter.split(X_arr, y_arr)
-            for fold_idx, (train_idx, val_idx) in enumerate(split_iter, start=1):
-                tr = _as_index_array(train_idx)
-                val = _as_index_array(val_idx)
-
-                self.logger.info(
-                    "Fold %d/%d: training on %d samples, validating on %d samples",
-                    fold_idx,
-                    self.n_splits,
-                    len(tr),
-                    len(val),
-                )
-
-                if self._preprocessor_cls is not None:
-                    preprocessor = self._preprocessor_cls(**self._preprocessor_config)
-
-                    X_tr_df = X.iloc[tr].copy()
-                    X_val_df = X.iloc[val].copy()
-
-                    X_tr_fold = np.asarray(preprocessor.fit_transform(X_tr_df))
-                    X_val_fold = np.asarray(preprocessor.transform(X_val_df))
-                else:
-                    X_tr_fold = X_arr[tr]
-                    X_val_fold = X_arr[val]
-
-                estimator = self._build_estimator(params)
-                estimator.fit(X_tr_fold, y_arr[tr])
-
-                y_pred = estimator.predict(X_val_fold)
-
-                predict_proba = getattr(estimator, "predict_proba", None)
-                y_proba = (
-                    np.asarray(predict_proba(X_val_fold))
-                    if predict_proba is not None and callable(predict_proba)
-                    else None
-                )
-
-                scorer = Scorer(estimator, self.task_type)
-                metrics = scorer.score(np.asarray(y_arr[val]).ravel(), np.asarray(y_pred).ravel(), y_proba)
-
-                if self.refit_metric_ not in metrics:
-                    raise KeyError(
-                        f"Refit metric '{self.refit_metric_}' not found in computed metrics: {metrics.keys()}"
-                    )
-
-                refit_score = metrics.get(self.refit_metric_)
-                if refit_score is None:
-                    continue
-                score = float(refit_score)
-                fold_scores.append(score)
-                safe_metrics: Dict[str, float] = {k: float(v) for k, v in metrics.items() if v is not None}
-                fold_metrics.append(safe_metrics)
-
-                self.logger.info("Fold %d metrics: %s", fold_idx, json.dumps(safe_metrics, indent=2, sort_keys=True))
-                self.logger.info("Fold %d %s score: %.6f", fold_idx, self.refit_metric_, score)
-
-            mean_score = float(np.mean(fold_scores)) if fold_scores else float("-inf")
-            std_score = float(np.std(fold_scores, ddof=1)) if len(fold_scores) > 1 else 0.0
+        # Collect results and find best parameters
+        # Log results here since worker process logs may not be visible
+        for idx, result in enumerate(results, start=1):
+            self.cv_results_.append(result)
 
             self.logger.info(
-                "Candidate %d mean %s score: %.6f ± %.6f", candidate_idx, self.refit_metric_, mean_score, std_score
+                "Candidate %d/%d: params=%s, mean_%s=%.6f +/- %.6f",
+                idx,
+                total_candidates,
+                result.params,
+                self.refit_metric_,
+                result.mean_score,
+                result.std_score,
             )
 
-            self.cv_results_.append(
-                CVParamSearchResult(
-                    params=params,
-                    fold_scores=fold_scores,
-                    mean_score=mean_score,
-                    std_score=std_score,
-                    fold_metrics=fold_metrics,
-                )
-            )
-
-            if self._is_better_score(mean_score, self.best_score_):
-                self.best_score_ = mean_score
-                self.best_params_ = dict(params)
+            if self._is_better_score(result.mean_score, self.best_score_):
+                self.best_score_ = result.mean_score
+                self.best_params_ = dict(result.params)
 
         self.logger.info(
             "Grid Search completed. Best %s score: %.6f with parameters: %s",
@@ -277,11 +406,11 @@ class GridSearchCVOptimizer:
             self.best_params_,
         )
 
-        if self._preprocessor_cls is not None:
+        if self._preprocessor_cls is not None and self._preprocessor_config is not None:
             preprocessor = self._preprocessor_cls(**self._preprocessor_config)
 
-            X_df = X.copy()
-            X_arr_full = np.asarray(preprocessor.fit_transform(X_df))
+            X_df_full = X_df.copy()
+            X_arr_full = np.asarray(preprocessor.fit_transform(X_df_full))
         else:
             X_arr_full = X_arr
 

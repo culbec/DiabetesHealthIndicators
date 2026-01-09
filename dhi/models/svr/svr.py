@@ -20,8 +20,10 @@ DHI_SVR_DEFAULT_DEGREE: int = 3
 DHI_SVR_DEFAULT_COEF0: float | None = None
 DHI_SVR_DEFAULT_SHRINKING: bool = True
 DHI_SVR_DEFAULT_SHRINKING_INTERVAL: int = 50
+DHI_SVR_DEFAULT_KERNEL_BATCH_SIZE: int = 5000
 
 DHI_SVR_X_NEAR_ZERO: float = 1e-12
+
 
 class SVRValidationError(Exception):
     def __init__(self, message: str):
@@ -70,6 +72,9 @@ class SVR_(BaseEstimator, RegressorMixin):
         Whether to use a shrinking heuristic in SMO (working-set reduction; speed only).
     shrinking_interval: int
         How often (in SMO iterations) to apply the shrinking heuristic. Only used if shrinking=True.
+    kernel_batch_size: int
+        Batch size for chunked kernel matrix computation when cache_kernel=False.
+        Controls memory usage during final error computation. Lower values use less memory.
     random_state: int | None
         The random state for the optimization algorithm.
     verbose: bool
@@ -144,6 +149,7 @@ class SVR_(BaseEstimator, RegressorMixin):
         cache_kernel: bool = True,
         shrinking: bool = DHI_SVR_DEFAULT_SHRINKING,
         shrinking_interval: int = DHI_SVR_DEFAULT_SHRINKING_INTERVAL,
+        kernel_batch_size: int = DHI_SVR_DEFAULT_KERNEL_BATCH_SIZE,
         random_state: int | None = None,
         verbose: bool = False,
     ):
@@ -161,6 +167,7 @@ class SVR_(BaseEstimator, RegressorMixin):
         self.cache_kernel = cache_kernel
         self.shrinking = shrinking
         self.shrinking_interval = shrinking_interval
+        self.kernel_batch_size = kernel_batch_size
         self.random_state = random_state
         self.verbose = verbose
 
@@ -259,15 +266,15 @@ class SVR_(BaseEstimator, RegressorMixin):
 
         X_ = np.asarray(X, dtype=np.float64)
         X_var = np.var(X_, dtype=np.float64)
-        
+
         self.logger.debug(f"Input data variance: {X_var}")
-        
+
         # Preventing division by zero in case of very small variance
         if X_var < DHI_SVR_X_NEAR_ZERO:
             return 1.0
-        
+
         gamma = 1.0 / (X_.shape[1] * X_var)
-        
+
         # Clipping gamma to a maximum value to avoid numerical issues
         return float(np.clip(gamma, DHI_SVR_X_NEAR_ZERO, 1 / DHI_SVR_X_NEAR_ZERO))
 
@@ -826,14 +833,26 @@ class SVR_(BaseEstimator, RegressorMixin):
 
         self.logger.info(f"SMO algorithm OK steps: {ok_steps}, fail steps: {fail_steps}")
 
+        # Vectorized final error computation (avoids O(n^2) individual kernel calls)
+        beta = self.a_[: self.n_samples_] - self.a_[self.n_samples_ :]
         if self.kernel_matrix_ is not None:
-            beta = self.a_[: self.n_samples_] - self.a_[self.n_samples_ :]
             f = beta @ self.kernel_matrix_ + self.b_
             self.errors_ = np.array(f - self.y_, dtype=np.float64)
         else:
-            self.errors_ = np.array(
-                [self._output_for_index(i) - self.y_[i] for i in range(self.n_samples_)], dtype=np.float64
-            )
+            # Chunked kernel computation to limit memory usage
+            # Memory per chunk: O(n_samples * kernel_batch_size) instead of O(n_samples^2)
+            batch_size = max(DHI_SVR_DEFAULT_KERNEL_BATCH_SIZE, self.kernel_batch_size)
+            self.errors_ = np.empty(self.n_samples_, dtype=np.float64)
+
+            for start in range(0, self.n_samples_, batch_size):
+                end = min(start + batch_size, self.n_samples_)
+                self.logger.debug(f"Computing kernel matrix for batch {start}:{end}")
+
+                # K_chunk shape: (n_samples, kernel_batch_size)
+                K_chunk = self._compute_kernel_matrix(self.X_, self.X_[start:end])
+                # f_chunk = beta @ K_chunk + b, shape: (kernel_batch_size,)
+                f_chunk = beta @ K_chunk + self.b_
+                self.errors_[start:end] = f_chunk - self.y_[start:end]
 
         self.passes_ = passes
         self.iters_ = iters
@@ -931,6 +950,9 @@ class SVR_(BaseEstimator, RegressorMixin):
         """
         Predicts the output of the SVR model for the given input data.
 
+        Uses chunked kernel computation when cache_kernel=False to limit memory usage.
+        Memory per chunk: O(kernel_batch_size * n_train_samples) instead of O(n_test * n_train).
+
         :param ArrayLike X: The input data
         :return np.ndarray: The predicted output
         """
@@ -942,5 +964,24 @@ class SVR_(BaseEstimator, RegressorMixin):
         if X.shape[1] != self.n_features_in_:
             raise SVRValidationError(f"X must have {self.n_features_in_} features")
 
-        K = self._compute_kernel_matrix(X, self.X_)
-        return K @ self.dual_coef_ + self.b_
+        n_test = X.shape[0]
+
+        # If kernel is cached or test set is small, compute in one go
+        if self.cache_kernel or n_test <= self.kernel_batch_size:
+            K = self._compute_kernel_matrix(X, self.X_)
+            return K @ self.dual_coef_ + self.b_
+
+        # Chunked prediction to limit memory usage
+        # Memory per chunk: O(kernel_batch_size * n_train_samples)
+        batch_size = max(DHI_SVR_DEFAULT_KERNEL_BATCH_SIZE, self.kernel_batch_size)
+        predictions = np.empty(n_test, dtype=np.float64)
+
+        for start in range(0, n_test, batch_size):
+            end = min(start + batch_size, n_test)
+            self.logger.debug(f"Predicting batch {start}:{end}")
+
+            # K_chunk shape: (chunk_size, n_train_samples)
+            K_chunk = self._compute_kernel_matrix(X[start:end], self.X_)
+            predictions[start:end] = K_chunk @ self.dual_coef_ + self.b_
+
+        return predictions
