@@ -2,8 +2,11 @@ import logging
 import pathlib
 from typing import Any, Mapping, Tuple, TypeAlias, Union
 
-import numpy as np
 import shap
+import numpy as np
+
+from dhi.data.preprocessing.dhi_preprocessor import DHIDataPreprocessor as DHI_PREPROCESSOR_DEFAULT
+
 from sklearn.ensemble import RandomForestClassifier as RF
 from sklearn.svm import SVR
 
@@ -143,3 +146,7 @@ DHI_ML_EXPLAINER_REGISTRY: Mapping[str, Mapping[str, Any]] = {
         "kwargs": {},
     },
 }
+
+PreprocessorType: TypeAlias = Union[DHI_PREPROCESSOR_DEFAULT]
+
+DHI_PREPROCESSOR_REGISTRY: Mapping[str, PreprocessorType] = {"dhi_default": DHI_PREPROCESSOR_DEFAULT}
