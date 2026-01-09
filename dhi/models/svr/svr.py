@@ -1,7 +1,7 @@
 # Partial credits to: https://github.com/nihil21/custom-svm/blob/master/src/svm.py
 
 import logging
-from typing import Any, Callable, Optional
+from typing import Any, Callable, Optional, Union
 
 import numpy as np
 from numpy.typing import ArrayLike
@@ -21,6 +21,7 @@ DHI_SVR_DEFAULT_COEF0: float | None = None
 DHI_SVR_DEFAULT_SHRINKING: bool = True
 DHI_SVR_DEFAULT_SHRINKING_INTERVAL: int = 50
 
+DHI_SVR_X_NEAR_ZERO: float = 1e-12
 
 class SVRValidationError(Exception):
     def __init__(self, message: str):
@@ -173,7 +174,9 @@ class SVR_(BaseEstimator, RegressorMixin):
         self.n_samples_: int = 0
         self.n_features_in_: int = 0
 
-        self.kernel_func_: Optional[Callable] = None
+        self.kernel_func_: Optional[
+            Callable[[Union[np.number, ArrayLike], Union[np.number, ArrayLike]], Union[np.number, ArrayLike]]
+        ] = None
         self.kernel_matrix_: Optional[np.ndarray] = None
 
         self.gamma_: Optional[float] = None
@@ -254,9 +257,19 @@ class SVR_(BaseEstimator, RegressorMixin):
         if self.gamma is not None:
             return float(self.gamma)
 
-        X = np.asarray(X)
-        X_var = X.var()
-        return 1.0 / (X.shape[1] * X_var) if X_var != 0 else 1.0
+        X_ = np.asarray(X, dtype=np.float64)
+        X_var = np.var(X_, dtype=np.float64)
+        
+        self.logger.debug(f"Input data variance: {X_var}")
+        
+        # Preventing division by zero in case of very small variance
+        if X_var < DHI_SVR_X_NEAR_ZERO:
+            return 1.0
+        
+        gamma = 1.0 / (X_.shape[1] * X_var)
+        
+        # Clipping gamma to a maximum value to avoid numerical issues
+        return float(np.clip(gamma, DHI_SVR_X_NEAR_ZERO, 1 / DHI_SVR_X_NEAR_ZERO))
 
     def _resolve_kernel_func(self) -> Callable:
         """
@@ -269,6 +282,7 @@ class SVR_(BaseEstimator, RegressorMixin):
         self.coef0_ = self.coef0 if self.coef0 is not None else 0.0
         if self.gamma_ is None:
             self.gamma_ = self._resolve_gamma(self.X_)
+            self.logger.debug(f"Gamma was resolved to: {self.gamma_}")
 
         self.degree_ = self.degree
 
@@ -284,25 +298,65 @@ class SVR_(BaseEstimator, RegressorMixin):
                     DHI_SVR_DEFAULT_COEF0,
                     DHI_SVR_DEFAULT_DEGREE,
                 )
-                return lambda x, y: np.dot(x, y)
+
+                def linear_kernel(x, y):
+                    x, y = np.atleast_2d(x), np.atleast_2d(y)
+                    return x @ y.T
+
+                self.logger.debug("Using a linear kernel")
+                return linear_kernel
             case "poly":
-                return lambda x, y: (self.gamma_ * np.dot(x, y) + self.coef0_) ** self.degree_
+                if self.gamma_ is None:
+                    raise SVRKernelError("Gamma parameter must be resolved before using the poly kernel.")
+
+                gamma_, coef0_, degree_ = self.gamma_, self.coef0_, self.degree_
+
+                def poly_kernel(x, y):
+                    x, y = np.atleast_2d(x), np.atleast_2d(y)
+                    return (gamma_ * (x @ y.T) + coef0_) ** degree_
+
+                self.logger.debug(
+                    f"Using a polynomial kernel with the following parameters: gamma={self.gamma_}, coef0={self.coef0_}, degree={self.degree_}"
+                )
+                return poly_kernel
             case "rbf":
-                self.coef0 = DHI_SVR_DEFAULT_COEF0
-                self.coef0_ = DHI_SVR_DEFAULT_COEF0
-                self.degree = DHI_SVR_DEFAULT_DEGREE
-                self.degree_ = DHI_SVR_DEFAULT_DEGREE
+                self.coef0, self.coef0_ = DHI_SVR_DEFAULT_COEF0, DHI_SVR_DEFAULT_COEF0
+                self.degree, self.degree_ = DHI_SVR_DEFAULT_DEGREE, DHI_SVR_DEFAULT_DEGREE
+
                 if self.gamma_ is None:
                     raise SVRKernelError("Gamma parameter must be resolved before using the RBF kernel.")
-                gamma = self.gamma_
-                return lambda x, y: np.exp(-gamma * np.linalg.norm(np.asarray(x) - np.asarray(y)) ** 2)
+
+                gamma_ = self.gamma_
+
+                def rbf_kernel(x, y):
+                    x = np.atleast_2d(x).astype(np.float64, copy=False)
+                    y = np.atleast_2d(y).astype(np.float64, copy=False)
+                    # Vectorized: ||x - y||^2 = ||x||^2 + ||y||^2 - 2 * x @ y.T
+                    x_sq = np.sum(x * x, axis=1, keepdims=True, dtype=np.float64)
+                    y_sq = np.sum(y * y, axis=1, keepdims=True, dtype=np.float64)
+                    sq_dist = x_sq + y_sq.T - 2.0 * (x @ y.T)
+                    # Clamp negative values due to numerical precision
+                    sq_dist = np.maximum(sq_dist, 0.0)
+                    return np.exp(-gamma_ * sq_dist)
+
+                self.logger.debug(f"Using a RBF kernel with the following parameters: gamma={self.gamma_}")
+                return rbf_kernel
             case "sigmoid":
-                self.degree = DHI_SVR_DEFAULT_DEGREE
-                self.degree_ = DHI_SVR_DEFAULT_DEGREE
+                self.degree, self.degree_ = DHI_SVR_DEFAULT_DEGREE, DHI_SVR_DEFAULT_DEGREE
+
                 if self.gamma_ is None:
                     raise SVRKernelError("Gamma parameter must be resolved before using the sigmoid kernel.")
-                gamma = self.gamma_
-                return lambda x, y: np.tanh(gamma * np.dot(x, y) + self.coef0_)
+
+                gamma_, coef0_ = self.gamma_, self.coef0_
+
+                def sigmoid_kernel(x, y):
+                    x, y = np.atleast_2d(x), np.atleast_2d(y)
+                    return np.tanh(gamma_ * (x @ y.T) + coef0_)
+
+                self.logger.debug(
+                    f"Using a sigmoid kernel with the following parameters: gamma={self.gamma_}, coef0={self.coef0_}"
+                )
+                return sigmoid_kernel
             case _:
                 raise SVRKernelError(f"Invalid kernel type: {self.kernel}")
 
@@ -314,7 +368,7 @@ class SVR_(BaseEstimator, RegressorMixin):
         :param ArrayLike y: The target data
         :return bool: Whether the data is valid or not
         """
-        X, y = np.asarray(X, dtype=float), np.asarray(y, dtype=float).ravel()
+        X, y = np.asarray(X), np.asarray(y).ravel()
 
         if X.ndim != 2:
             self.logger.error(f"X must be a 2D array, got {X.ndim}D")
@@ -337,21 +391,14 @@ class SVR_(BaseEstimator, RegressorMixin):
         """
         Computes the kernel matrix for the input data.
 
-        :param ArrayLike A: The first input data
-        :param ArrayLike B: The second input data
-        :return np.ndarray: The kernel matrix
+        :param ArrayLike A: The first input data (n_a samples x d features)
+        :param ArrayLike B: The second input data (n_b samples x d features)
+        :return np.ndarray: The kernel matrix (n_a x n_b)
         """
         if self.kernel_func_ is None:
             self.kernel_func_ = self._resolve_kernel_func()
 
-        A_, B_ = np.asarray(A, dtype=float), np.asarray(B, dtype=float)
-
-        m, n = A_.shape[0], B_.shape[0]
-        K = np.zeros((m, n), dtype=float)
-        for i in range(m):
-            for j in range(n):
-                K[i, j] = self.kernel_func_(A_[i], B_[j])
-        return K
+        return np.asarray(self.kernel_func_(A, B), dtype=np.float64)
 
     def _K(self, i: int, j: int) -> float:
         """
@@ -361,13 +408,17 @@ class SVR_(BaseEstimator, RegressorMixin):
         :param int j: The second index
         :return float: The kernel value
         """
-        if self.kernel_matrix_ is not None and self.kernel_matrix_.ndim == 2:
+        if self.kernel_matrix_ is not None:
             return float(self.kernel_matrix_[i, j])
 
         if self.kernel_func_ is None:
-            raise SVRKernelError("Cannot use a None kernel")
+            self.kernel_func_ = self._resolve_kernel_func()
 
-        return float(self.kernel_func_(self.X_[i], self.X_[j]))
+        xi, xj = self.X_[i], self.X_[j]
+        result = self.kernel_func_(xi, xj)
+
+        # Kernel returns (1,1) array for pairwise; extract scalar
+        return float(np.asarray(result).ravel()[0])
 
     def _output_for_index(self, idx: int) -> float:
         """
@@ -377,13 +428,10 @@ class SVR_(BaseEstimator, RegressorMixin):
         :return float: The output of the current model
         """
         beta = self.a_[: self.n_samples_] - self.a_[self.n_samples_ :]
-        if self.kernel_matrix_ is not None and self.kernel_matrix_.ndim == 2:
+        if self.kernel_matrix_ is not None:
             return float(beta @ self.kernel_matrix_[:, idx] + self.b_)
 
-        res = 0.0
-        for i in range(self.n_samples_):
-            res += beta[i] * self._K(i, idx)
-        return float(res + self.b_)
+        return float(sum(beta[i] * self._K(i, idx) for i in range(self.n_samples_)) + self.b_)
 
     def _update_error_cache(self, idx_i: int, idx_j: int, delta_ai: float, delta_aj: float, delta_b: float) -> None:
         """
@@ -399,7 +447,7 @@ class SVR_(BaseEstimator, RegressorMixin):
         ij = idx_j if idx_j < self.n_samples_ else idx_j - self.n_samples_
         sign_i, sign_j = self.sign_[idx_i], self.sign_[idx_j]
 
-        if self.kernel_matrix_ is not None and self.kernel_matrix_.ndim == 2:
+        if self.kernel_matrix_ is not None:
             self.errors_ += (
                 sign_i * delta_ai * self.kernel_matrix_[:, ii]
                 + sign_j * delta_aj * self.kernel_matrix_[:, ij]
@@ -408,12 +456,12 @@ class SVR_(BaseEstimator, RegressorMixin):
             return
 
         if self.kernel_func_ is None:
-            raise SVRKernelError("Cannot use a None kernel")
+            self.kernel_func_ = self._resolve_kernel_func()
 
-        for k in range(self.n_samples_):
-            self.errors_[k] += sign_i * delta_ai * self.kernel_func_(self.X_[k], self.X_[ii])
-            self.errors_[k] += sign_j * delta_aj * self.kernel_func_(self.X_[k], self.X_[ij])
-            self.errors_[k] += delta_b
+        # Vectorized: compute K(all_samples, sample_ii) and K(all_samples, sample_ij)
+        K_ii = np.asarray(self.kernel_func_(self.X_, self.X_[ii : ii + 1])).ravel()  # (n_samples,)
+        K_ij = np.asarray(self.kernel_func_(self.X_, self.X_[ij : ij + 1])).ravel()  # (n_samples,)
+        self.errors_ += sign_i * delta_ai * K_ii + sign_j * delta_aj * K_ij + delta_b
 
     def _phi(self, idx: int) -> float:
         """
@@ -455,9 +503,11 @@ class SVR_(BaseEstimator, RegressorMixin):
 
         # Violation: can increase (low alpha, positive gradient)
         if alpha < self.C - np.finfo(float).eps and gradient > self.tol:
+            self.logger.debug(f"Violation: can increase (low alpha, positive gradient) for index {idx}")
             return True
         # Violation: can decrease (high alpha, negative gradient)
         if alpha > np.finfo(float).eps and gradient < -self.tol:
+            self.logger.debug(f"Violation: can decrease (high alpha, negative gradient) for index {idx}")
             return True
         return False
 
@@ -495,6 +545,7 @@ class SVR_(BaseEstimator, RegressorMixin):
 
         max_viol = float(np.max(viol))
         if max_viol <= self.tol and np.all(np.abs(self.errors_) <= self.epsilon + self.tol):
+            self.logger.debug("No optimizable KKT violations found, algorithm converged")
             return None
 
         return int(np.argmax(viol))
@@ -509,6 +560,7 @@ class SVR_(BaseEstimator, RegressorMixin):
           - alpha near C and gradient >= 0
         """
         if (not self.shrinking) or (self.active_set_ is None):
+            self.logger.debug("Shrinking is not enabled or the active set is None")
             return
 
         bound_eps = max(float(self.tol), float(np.finfo(float).eps))
@@ -700,6 +752,7 @@ class SVR_(BaseEstimator, RegressorMixin):
         if self.shrinking:
             self.active_set_ = np.ones(2 * self.n_samples_, dtype=bool)
         else:
+            self.logger.debug("Shrinking is not enabled, initializing active set as None")
             self.active_set_ = None
 
         while passes < self.max_passes and iters < self.max_iter:
@@ -773,13 +826,14 @@ class SVR_(BaseEstimator, RegressorMixin):
 
         self.logger.info(f"SMO algorithm OK steps: {ok_steps}, fail steps: {fail_steps}")
 
-        if self.kernel_matrix_ is not None and self.kernel_matrix_.ndim == 2:
+        if self.kernel_matrix_ is not None:
             beta = self.a_[: self.n_samples_] - self.a_[self.n_samples_ :]
             f = beta @ self.kernel_matrix_ + self.b_
-            self.errors_ = f - self.y_
+            self.errors_ = np.array(f - self.y_, dtype=np.float64)
         else:
-            for i in range(self.n_samples_):
-                self.errors_[i] = self._output_for_index(i) - self.y_[i]
+            self.errors_ = np.array(
+                [self._output_for_index(i) - self.y_[i] for i in range(self.n_samples_)], dtype=np.float64
+            )
 
         self.passes_ = passes
         self.iters_ = iters
@@ -808,14 +862,16 @@ class SVR_(BaseEstimator, RegressorMixin):
         if not self._validate_data(X, y):
             raise SVRValidationError("Provided data cannot be fed to the SVR model")
 
-        X, y = np.asarray(X, dtype=float), np.asarray(y, dtype=float).ravel()
+        X, y = np.asarray(X), np.asarray(y).ravel()
+
         self.X_, self.y_ = X, y
         self.n_samples_, self.n_features_in_ = X.shape[0], X.shape[1]
 
-        self.logger.debug(f"Input data shape: {X.shape}, target data shape: {y.shape}")
+        self.logger.debug(f"Input data shape: {self.X_.shape}, target data shape: {self.y_.shape}")
+        self.logger.debug(f"Number of samples: {self.n_samples_}, number of features: {self.n_features_in_}")
 
         # Resolving the kernel coefficient and the kernel function
-        self.gamma_ = self._resolve_gamma(X)
+        self.gamma_ = self._resolve_gamma(self.X_)
         self.logger.debug(f"Resolved gamma: {self.gamma_}")
 
         self.kernel_func_ = self._resolve_kernel_func()
@@ -823,10 +879,10 @@ class SVR_(BaseEstimator, RegressorMixin):
         # The dual variables: (alpha, alpha_star), stored in a single array of shape (2 * n_samples_)
         # * alpha_: positive support vectors, raises the prediction above the error tube
         # * alpha_star_: negative support vectors, lowers the prediction below the error tube
-        self.a_ = np.zeros(2 * self.n_samples_, dtype=float)
+        self.a_ = np.zeros(2 * self.n_samples_, dtype=np.float32)
 
         # The sign vector: its purpose is to map the sign of the dual variables to the corresponding side of the error tube
-        self.sign_ = np.ones(2 * self.n_samples_, dtype=float)
+        self.sign_ = np.ones(2 * self.n_samples_, dtype=np.int8)
         self.sign_[self.n_samples_ :] = -1.0
 
         # The bias term
@@ -837,7 +893,6 @@ class SVR_(BaseEstimator, RegressorMixin):
             self.kernel_matrix_ = self._compute_kernel_matrix(X, X)
             self.logger.debug("Kernel matrix cached")
         else:
-            self.kernel_matrix_ = None
             self.logger.debug("Not caching kernel matrix")
 
         # Initial errors are the negative of the target data
@@ -858,15 +913,17 @@ class SVR_(BaseEstimator, RegressorMixin):
 
         # Kernel stats
         self.kernel_stats_ = {}
-        if self.kernel_matrix_ is not None and self.kernel_matrix_.ndim == 2:
-            self.kernel_stats_ = {
-                "min": np.min(self.kernel_matrix_),
-                "max": np.max(self.kernel_matrix_),
-                "mean": np.mean(self.kernel_matrix_),
-                "std": np.std(self.kernel_matrix_),
-                "var": np.var(self.kernel_matrix_),
-                "median": np.median(self.kernel_matrix_),
-            }
+        if self.kernel_matrix_ is not None:
+            km = np.asarray(self.kernel_matrix_, dtype=np.float64)
+            if np.all(np.isfinite(km)):
+                self.kernel_stats_ = {
+                    "min": float(np.min(km)),
+                    "max": float(np.max(km)),
+                    "mean": float(np.mean(km)),
+                    "std": float(np.std(km)),
+                    "var": float(np.var(km)),
+                    "median": float(np.median(km)),
+                }
 
         return self
 
