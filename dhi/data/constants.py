@@ -1,6 +1,6 @@
 import sklearn.preprocessing as skp
 from sklearn.base import BaseEstimator
-from typing import Type
+from typing import Type, Mapping, TypeAlias, Union
 
 ##############################
 # PREPROCESSOR CONSTANTS

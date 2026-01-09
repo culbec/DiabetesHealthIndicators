@@ -1,3 +1,4 @@
+import json
 from dataclasses import dataclass
 from itertools import product
 from typing import Any, Dict, List, Mapping, Optional, Set
@@ -7,6 +8,7 @@ from numpy.typing import ArrayLike
 from sklearn.base import BaseEstimator
 
 import dhi.constants as dconst
+from dhi.utils import get_logger
 from dhi.models.eval.scorer import Scorer
 from dhi.models.selection.cross_validation import (
     KFoldCVSplitter,
@@ -108,7 +110,10 @@ class GridSearchCVOptimizer:
         base_params: Dict[str, Any],
         param_grid: Dict[str, List[Any]],
         cv_params: Optional[Dict[str, Any]] = None,
+        preprocessor_config: Optional[Dict[str, Any]] = None,
     ):
+        self.logger = get_logger(self.__class__.__name__)
+
         self.model_cls = model_cls
         self.task_type = task_type
         self.base_params = dict(base_params or {})
@@ -130,6 +135,18 @@ class GridSearchCVOptimizer:
         self.best_params_: Dict[str, Any] = {}
         self.best_score_: float = float("-inf") if self.greater_is_better_ else float("inf")
         self.best_estimator_: Optional[BaseEstimator] = None
+
+        # TODO: more robust type checking using asserts
+        if not preprocessor_config:
+            self.logger.warning(
+                "No preprocessor configuration provided; proceeding without data preprocessing during cross-validation"
+            )
+            self._preprocessor_config = None
+            self._preprocessor_cls = None
+        else:
+            self._preprocessor_config = preprocessor_config
+            preprocessor_type = self._preprocessor_config.pop("type", None)
+            self._preprocessor_cls = dconst.DHI_PREPROCESSOR_REGISTRY.get(preprocessor_type, None)
 
         if self.task_type not in {"classification", "regression"}:
             raise ValueError(
@@ -155,32 +172,60 @@ class GridSearchCVOptimizer:
         return score > best if self.greater_is_better_ else score < best
 
     def fit(self, X: ArrayLike, y: ArrayLike) -> "GridSearchCVOptimizer":
-        # TODO: add data preprocessing step here, so scalers would be fitted on training fold only and applied to validation fold
         X_arr = np.asarray(X)
         y_arr = np.asarray(y)
 
         splitter = self._build_splitter()
         candidates = _expand_param_grid(self.param_grid)
 
-        for params in candidates:
+        self.logger.info(
+            "Starting Grid Search optimization: %d candidate parameter sets, %d-fold cross-validation",
+            len(candidates),
+            self.n_splits,
+        )
+
+        for candidate_idx, params in enumerate(candidates, start=1):
             # TODO: fold scores can be used for reporting a statistical analysis of the results, by computing standard deviation and confidence intervals
             # TODO: these metrics will be implemented in the statistics module and imported accordingly
+            self.logger.info("Evaluating candidate %d/%d parameters:", candidate_idx, len(candidates))
+            self.logger.info("Candidate parameters: %s", params)
+
             fold_scores: List[float] = []
             fold_metrics: List[Dict[str, float]] = []
 
             split_iter = splitter.split(X_arr, y_arr)
-            for train_idx, val_idx in split_iter:
+            for fold_idx, (train_idx, val_idx) in enumerate(split_iter, start=1):
                 tr = _as_index_array(train_idx)
                 val = _as_index_array(val_idx)
 
-                estimator = self._build_estimator(params)
-                estimator.fit(X_arr[tr], y_arr[tr])
+                self.logger.info(
+                    "Fold %d/%d: training on %d samples, validating on %d samples",
+                    fold_idx,
+                    self.n_splits,
+                    len(tr),
+                    len(val),
+                )
 
-                y_pred = estimator.predict(X_arr[val])
+                if self._preprocessor_cls is not None:
+                    preprocessor = self._preprocessor_cls(**self._preprocessor_config)
+
+                    X_tr_df = X.iloc[tr].copy()
+                    X_val_df = X.iloc[val].copy()
+
+                    X_tr_fold = np.asarray(preprocessor.fit_transform(X_tr_df))
+                    X_val_fold = np.asarray(preprocessor.transform(X_val_df))
+                else:
+                    X_tr_fold = X_arr[tr]
+                    X_val_fold = X_arr[val]
+
+                estimator = self._build_estimator(params)
+                estimator.fit(X_tr_fold, y_arr[tr])
+
+                y_pred = estimator.predict(X_val_fold)
 
                 predict_proba = getattr(estimator, "predict_proba", None)
                 y_proba = (
-                    np.asarray(predict_proba(X_arr[val]))
+                    np.asarray(predict_proba(X_val_fold))
                     if predict_proba is not None and callable(predict_proba)
                     else None
                 )
@@ -201,8 +246,15 @@ class GridSearchCVOptimizer:
                 safe_metrics: Dict[str, float] = {k: float(v) for k, v in metrics.items() if v is not None}
                 fold_metrics.append(safe_metrics)
 
+                self.logger.info("Fold %d metrics: %s", fold_idx, json.dumps(safe_metrics, indent=2, sort_keys=True))
+                self.logger.info("Fold %d %s score: %.6f", fold_idx, self.refit_metric_, score)
+
             mean_score = float(np.mean(fold_scores)) if fold_scores else float("-inf")
             std_score = float(np.std(fold_scores, ddof=1)) if len(fold_scores) > 1 else 0.0
+
+            self.logger.info(
+                "Candidate %d mean %s score: %.6f ± %.6f", candidate_idx, self.refit_metric_, mean_score, std_score
+            )
 
             self.cv_results_.append(
                 CVParamSearchResult(
@@ -218,8 +270,25 @@ class GridSearchCVOptimizer:
                 self.best_score_ = mean_score
                 self.best_params_ = dict(params)
 
+        self.logger.info(
+            "Grid Search completed. Best %s score: %.6f with parameters: %s",
+            self.refit_metric_,
+            self.best_score_,
+            self.best_params_,
+        )
+
+        if self._preprocessor_cls is not None:
+            preprocessor = self._preprocessor_cls(**self._preprocessor_config)
+
+            X_df = X.copy()
+            X_arr_full = np.asarray(preprocessor.fit_transform(X_df))
+        else:
+            X_arr_full = X_arr
+
         self.best_estimator_ = self._build_estimator(self.best_params_)
-        self.best_estimator_.fit(X_arr, y_arr)
+        self.best_estimator_.fit(X_arr_full, y_arr)
+
+        self.logger.info("Best estimator refitted on full dataset: X = %s, y = %s", X_arr.shape, y_arr.shape)
 
         return self
 
