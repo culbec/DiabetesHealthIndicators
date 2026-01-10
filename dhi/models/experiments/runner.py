@@ -1,7 +1,7 @@
 import json
 import pathlib
 from copy import deepcopy
-from typing import Mapping, Optional, Dict, Any
+from typing import Any, Dict, Mapping, Optional
 
 import joblib
 import numpy as np
@@ -11,9 +11,9 @@ from numpy.typing import ArrayLike
 from sklearn.exceptions import NotFittedError
 
 import dhi.constants as dconst
-from dhi.utils import get_logger
 from dhi.decorators import time_func
 from dhi.data.factory import build_preprocessor
+from dhi.utils import get_logger, validate_param_grid
 
 from dhi.models.eval.scorer import Scorer
 from dhi.models.selection.grid_search import GridSearchCVOptimizer
@@ -55,6 +55,16 @@ class ExperimentRunner:
             else None
         )
 
+        self._cv_statistics_path = kwargs.get("cv_statistics_path", None)
+        assert self._cv_statistics_path is None or isinstance(
+            self._cv_statistics_path, (str, pathlib.Path)
+        ), "cv_statistics_path must be a string or pathlib.Path"
+        self._cv_statistics_path = (
+            (pathlib.Path(self._cv_statistics_path) / f"{self._model_name}_cv_statistics.json")
+            if self._cv_statistics_path is not None
+            else None
+        )
+
         self._load_path = kwargs.get("load_path", None)
         assert self._load_path is None or isinstance(
             self._load_path, (str, pathlib.Path)
@@ -70,7 +80,8 @@ class ExperimentRunner:
         assert isinstance(self._cv_params, dict), "cv_params must be a dictionary"
 
         self._param_grid = self._cv_params.pop("param_grid", {})
-        assert isinstance(self._param_grid, dict), "param_grid must be a dictionary"
+        # Validate param_grid format (supports dict or list of dicts for kernel-specific params)
+        validate_param_grid(self._param_grid, "param_grid")
 
         # Initializing the model instance
         self._model: dconst.ModelType = self._model_cls(**self._params)
@@ -194,6 +205,13 @@ class ExperimentRunner:
                 )
             self._model = optimizer.best_estimator_
             self._preprocessor = optimizer.fitted_preprocessor_
+
+            cv_statistic_report = optimizer.get_statistics_report()
+            self.logger.info(f"Cross-validation statistics report: {cv_statistic_report}")
+            if self._cv_statistics_path:
+                with open(self._cv_statistics_path, "w") as f:
+                    json.dump(cv_statistic_report, f, indent=4)
+                self.logger.info(f"Cross-validation statistics dumped to {self._cv_statistics_path}")
         else:
             self.logger.info(
                 f"Fitting {self._model_name} on data with shape {X.shape} and target with shape {y.shape} without cross-validation"

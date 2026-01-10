@@ -15,7 +15,8 @@ DHI_SVR_DEFAULT_EPSILON: float = 1e-1
 DHI_SVR_DEFAULT_TOL: float = 1e-3
 DHI_SVR_DEFAULT_MAX_ITER: int = 1000
 DHI_SVR_DEFAULT_MAX_PASSES: int = 50
-DHI_SVR_DEFAULT_GAMMA: float | None = None
+DHI_SVR_GAMMA_OPTIONS: list[str] = ["scale", "auto"]
+DHI_SVR_DEFAULT_GAMMA: str = "scale"
 DHI_SVR_DEFAULT_DEGREE: int = 3
 DHI_SVR_DEFAULT_COEF0: float | None = None
 DHI_SVR_DEFAULT_SHRINKING: bool = True
@@ -52,8 +53,11 @@ class SVR_(BaseEstimator, RegressorMixin):
         The regularization parameter.
     epsilon: float
         The epsilon-insensitive loss parameter.
-    gamma: float
-        The kernel coefficient; if None, it will be computed automatically during the fit.
+    gamma: {"scale", "auto"} or float
+        Kernel coefficient for rbf, poly, and sigmoid kernels.
+        - "scale" (default): gamma = 1 / (n_features * X.var())
+        - "auto": gamma = 1 / n_features
+        - float: explicit gamma value
     degree: int
         The degree of the polynomial kernel. Only used if the kernel is "poly".
     coef0: float
@@ -139,7 +143,7 @@ class SVR_(BaseEstimator, RegressorMixin):
         *,
         C: float = DHI_SVR_DEFAULT_C,
         kernel: str = DHI_SVR_DEFAULT_KERNEL,
-        gamma: float | None = DHI_SVR_DEFAULT_GAMMA,
+        gamma: float | str = DHI_SVR_DEFAULT_GAMMA,
         degree: int = DHI_SVR_DEFAULT_DEGREE,
         coef0: float | None = DHI_SVR_DEFAULT_COEF0,
         epsilon: float = DHI_SVR_DEFAULT_EPSILON,
@@ -247,35 +251,53 @@ class SVR_(BaseEstimator, RegressorMixin):
 
     def _resolve_gamma(self, X: Optional[ArrayLike]) -> float:
         """
-        Resolves the `gamma` parameter according to the `scale` approach,
-        if it was not provided during the initialization.
+        Resolve the gamma parameter based on its value.
 
-        If the `gamma` parameter was provided during the initialization, it is returned as is, float scaled.
+        Supports three modes (similar to sklearn):
+        - "scale": gamma = 1 / (n_features * X.var())
+        - "auto": gamma = 1 / n_features
+        - float: use the provided value directly
 
-        The `gamma` parameter is computed as follows:
-        gamma = 1 / (n_features * var(X))
-
-        :param Optional[ArrayLike] X: The input data
-        :return float: The resolved `gamma` parameter
+        :param X: The input data used to compute gamma for "scale" and "auto" modes.
+        :return: The resolved gamma value as a float.
         """
         if X is None:
             return 0.0
 
-        if self.gamma is not None:
+        X_ = np.asarray(X, dtype=np.float64)
+        n_features = X_.shape[1]
+
+        # Handle numeric gamma (explicit value)
+        if isinstance(self.gamma, (int, float)):
             return float(self.gamma)
 
-        X_ = np.asarray(X, dtype=np.float64)
-        X_var = np.var(X_, dtype=np.float64)
+        # Handle string gamma options
+        gamma_str = str(self.gamma).lower()
 
-        self.logger.debug(f"Input data variance: {X_var}")
+        if gamma_str == "auto":
+            # auto: gamma = 1 / n_features
+            gamma = 1.0 / n_features
+            self.logger.debug(f"Using 'auto' gamma: 1 / {n_features} = {gamma}")
 
-        # Preventing division by zero in case of very small variance
-        if X_var < DHI_SVR_X_NEAR_ZERO:
-            return 1.0
+        elif gamma_str == "scale":
+            # scale: gamma = 1 / (n_features * X.var())
+            X_var = float(np.var(X_, dtype=np.float64))
+            self.logger.debug(f"Input data variance: {X_var}")
 
-        gamma = 1.0 / (X_.shape[1] * X_var)
+            # Prevent division by zero for very small variance
+            if X_var < DHI_SVR_X_NEAR_ZERO:
+                self.logger.warning(f"Data variance ({X_var}) is near zero, using gamma=1.0")
+                return 1.0
 
-        # Clipping gamma to a maximum value to avoid numerical issues
+            gamma = 1.0 / (n_features * X_var)
+            self.logger.debug(f"Using 'scale' gamma: 1 / ({n_features} * {X_var}) = {gamma}")
+
+        else:
+            raise SVRValidationError(
+                f"Invalid gamma value: '{self.gamma}'. Expected 'scale', 'auto', or a numeric value."
+            )
+
+        # Clip gamma to avoid numerical issues
         return float(np.clip(gamma, DHI_SVR_X_NEAR_ZERO, 1 / DHI_SVR_X_NEAR_ZERO))
 
     def _resolve_kernel_func(self) -> Callable:
@@ -295,16 +317,15 @@ class SVR_(BaseEstimator, RegressorMixin):
 
         match self.kernel:
             case "linear":
-                self.gamma, self.coef0, self.degree = (
-                    DHI_SVR_DEFAULT_GAMMA,
-                    DHI_SVR_DEFAULT_COEF0,
-                    DHI_SVR_DEFAULT_DEGREE,
-                )
-                self.gamma_, self.coef0_, self.degree_ = (
-                    DHI_SVR_DEFAULT_GAMMA,
-                    DHI_SVR_DEFAULT_COEF0,
-                    DHI_SVR_DEFAULT_DEGREE,
-                )
+                # Linear kernel doesn't use gamma, coef0, or degree
+                # Reset to defaults for consistency
+                self.gamma = DHI_SVR_DEFAULT_GAMMA
+                self.coef0 = DHI_SVR_DEFAULT_COEF0
+                self.degree = DHI_SVR_DEFAULT_DEGREE
+                # Resolved values are None for unused parameters
+                self.gamma_ = None
+                self.coef0_ = DHI_SVR_DEFAULT_COEF0
+                self.degree_ = DHI_SVR_DEFAULT_DEGREE
 
                 def linear_kernel(x, y):
                     x, y = np.atleast_2d(x), np.atleast_2d(y)
