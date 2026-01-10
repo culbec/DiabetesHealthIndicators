@@ -81,10 +81,11 @@
             }
         },
         "ml": {
-          "svr_sklearn": {
+            "svr_sklearn": {
                 "model_name": "svr_sklearn",
                 "save_path": "../.models/svr_sklearn",
                 "metrics_path": "../.models/svr_sklearn",
+                "cv_statistics_path": "../.models/svr_sklearn",
                 "params": {
                     "kernel": "rbf",
                     "degree": 3,
@@ -94,33 +95,88 @@
                     "epsilon": 1e-1
                 },
                 "cv_params": {
-                    "param_grid": {
-                        "kernel": [
-                            "linear",
-                            "poly",
-                            "rbf",
-                            "sigmoid"
-                        ],
-                        "degree": [
-                            3,
-                            4,
-                            5
-                        ],
-                        "C": [
-                            0.5,
-                            0.75,
-                            1,
-                            1.5
-                        ]
-                    },
+                    "param_grid": [
+                        {
+                            "kernel": [
+                                "linear"
+                            ],
+                            "C": [
+                                0.5,
+                                0.75,
+                                1,
+                                1.5
+                            ]
+                        },
+                        {
+                            "kernel": [
+                                "rbf"
+                            ],
+                            "C": [
+                                0.5,
+                                0.75,
+                                1,
+                                1.5
+                            ],
+                            "gamma": [
+                                "scale",
+                                "auto"
+                            ]
+                        },
+                        {
+                            "kernel": [
+                                "poly"
+                            ],
+                            "C": [
+                                0.5,
+                                0.75,
+                                1,
+                                1.5
+                            ],
+                            "gamma": [
+                                "scale",
+                                "auto"
+                            ],
+                            "degree": [
+                                3,
+                                4,
+                                5
+                            ],
+                            "coef0": [
+                                0.0,
+                                0.5,
+                                1.0
+                            ]
+                        },
+                        {
+                            "kernel": [
+                                "sigmoid"
+                            ],
+                            "C": [
+                                0.5,
+                                0.75,
+                                1,
+                                1.5
+                            ],
+                            "gamma": [
+                                "scale",
+                                "auto"
+                            ],
+                            "coef0": [
+                                0.0,
+                                0.5,
+                                1.0
+                            ]
+                        }
+                    ],
                     "refit_metric": "root_mean_squared_error",
                     "n_jobs": -1
                 }
             },
-          "svr_scratch": {
+            "svr_scratch": {
                 "model_name": "svr_scratch",
                 "save_path": "../.models/svr_scratch",
                 "metrics_path": "../.models/svr_scratch",
+                "cv_statistics_path": "../.models/svr_scratch",
                 "params": {
                     "kernel": "rbf",
                     "degree": 3,
@@ -130,89 +186,194 @@
                     "epsilon": 1e-1
                 },
                 "cv_params": {
-                    "param_grid": {
-                        "kernel": [
-                            "linear",
-                            "poly",
-                            "rbf",
-                            "sigmoid"
-                        ],
-                        "degree": [
-                            3,
-                            4,
-                            5
-                        ],
-                        "C": [
-                            0.5,
-                            0.75,
-                            1,
-                            1.5
-                        ]
-                    },
+                    "param_grid": [
+                        {
+                            "kernel": [
+                                "linear"
+                            ],
+                            "C": [
+                                0.5,
+                                0.75,
+                                1,
+                                1.5
+                            ]
+                        },
+                        {
+                            "kernel": [
+                                "rbf"
+                            ],
+                            "C": [
+                                0.5,
+                                0.75,
+                                1,
+                                1.5
+                            ],
+                            "gamma": [
+                                null,
+                                0.01,
+                                0.1,
+                                1.0
+                            ]
+                        },
+                        {
+                            "kernel": [
+                                "poly"
+                            ],
+                            "C": [
+                                0.5,
+                                0.75,
+                                1,
+                                1.5
+                            ],
+                            "gamma": [
+                                null,
+                                0.01,
+                                0.1
+                            ],
+                            "degree": [
+                                3,
+                                4,
+                                5
+                            ],
+                            "coef0": [
+                                0.0,
+                                0.5,
+                                1.0
+                            ]
+                        },
+                        {
+                            "kernel": [
+                                "sigmoid"
+                            ],
+                            "C": [
+                                0.5,
+                                0.75,
+                                1,
+                                1.5
+                            ],
+                            "gamma": [
+                                null,
+                                0.01,
+                                0.1
+                            ],
+                            "coef0": [
+                                0.0,
+                                0.5,
+                                1.0
+                            ]
+                        }
+                    ],
                     "refit_metric": "root_mean_squared_error",
                     "n_jobs": -1
                 }
             },
-          "rf_scratch": {
-            "model_name": "rf_scratch",
-            "save_path": "../.models/rf_scratch",
-            "metrics_path": "../.models/rf_scratch",
-            "params": {
-              "n_trees": 100,
-              "max_depth": 10,
-              "min_samples_split": 10,
-              "min_samples_leaf": 5,
-              "vote": "hard",
-              "impurity_metric": "gini",
-              "threshold": 0.5,
-              "seed": 42
+            "rf_scratch": {
+                "model_name": "rf_scratch",
+                "save_path": "../.models/rf_scratch",
+                "metrics_path": "../.models/rf_scratch",
+                "cv_statistics_path": "../.models/rf_scratch",
+                "params": {
+                    "n_trees": 100,
+                    "max_depth": 10,
+                    "min_samples_split": 10,
+                    "min_samples_leaf": 5,
+                    "vote": "hard",
+                    "impurity_metric": "gini",
+                    "threshold": 0.5,
+                    "seed": 42
+                },
+                "cv_params": {
+                    "n_splits": 5,
+                    "shuffle": true,
+                    "random_state": 42,
+                    "refit_metric": "f1",
+                    "param_grid": {
+                        "n_trees": [
+                            50,
+                            100,
+                            150
+                        ],
+                        "max_depth": [
+                            5,
+                            10,
+                            15
+                        ],
+                        "min_samples_split": [
+                            2,
+                            5,
+                            10
+                        ],
+                        "min_samples_leaf": [
+                            1,
+                            2,
+                            5
+                        ],
+                        "vote": [
+                            "hard",
+                            "soft"
+                        ],
+                        "impurity_metric": [
+                            "gini",
+                            "entropy"
+                        ],
+                        "threshold": [
+                            0.4,
+                            0.5,
+                            0.6
+                        ]
+                    },
+                    "n_jobs": -1
+                }
             },
-            "cv_params": {
-              "n_splits": 5,
-              "shuffle": true,
-              "random_state": 42,
-              "refit_metric": "f1",
-              "param_grid": {
-                "n_trees": [50, 100, 150],
-                "max_depth": [5, 10, 15],
-                "min_samples_split": [2, 5, 10],
-                "min_samples_leaf": [1, 2, 5],
-                "vote": ["hard", "soft"],
-                "impurity_metric": ["gini", "entropy"],
-                "threshold": [0.4, 0.5, 0.6]
-              },
-              "n_jobs": -1
+            "rf_sklearn": {
+                "model_name": "rf_sklearn",
+                "save_path": "../.models/rf_sklearn",
+                "metrics_path": "../.models/rf_sklearn",
+                "cv_statistics_path": "../.models/rf_sklearn",
+                "params": {
+                    "n_estimators": 100,
+                    "max_depth": 10,
+                    "min_samples_split": 10,
+                    "min_samples_leaf": 5,
+                    "criterion": "gini",
+                    "max_features": "sqrt",
+                    "bootstrap": true,
+                    "random_state": 42
+                },
+                "cv_params": {
+                    "n_splits": 5,
+                    "shuffle": true,
+                    "random_state": 42,
+                    "refit_metric": "f1",
+                    "param_grid": {
+                        "n_estimators": [
+                            50,
+                            100,
+                            150
+                        ],
+                        "max_depth": [
+                            5,
+                            10,
+                            15
+                        ],
+                        "min_samples_split": [
+                            2,
+                            5,
+                            10
+                        ],
+                        "min_samples_leaf": [
+                            1,
+                            2,
+                            5
+                        ],
+                        "criterion": [
+                            "gini",
+                            "entropy"
+                        ]
+                    },
+                    "n_jobs": -1
+                }
             }
-          },
-          "rf_sklearn": {
-            "model_name": "rf_sklearn",
-            "save_path": "../.models/rf_sklearn",
-            "metrics_path": "../.models/rf_sklearn",
-            "params": {
-              "n_estimators": 100,
-              "max_depth": 10,
-              "min_samples_split": 10,
-              "min_samples_leaf": 5,
-              "criterion": "gini",
-              "max_features": "sqrt",
-              "bootstrap": true,
-              "random_state": 42
-            },
-            "cv_params": {
-              "n_splits": 5,
-              "shuffle": true,
-              "random_state": 42,
-              "refit_metric": "f1",
-              "param_grid": {
-                "n_estimators": [50, 100, 150],
-                "max_depth": [5, 10, 15],
-                "min_samples_split": [2, 5, 10],
-                "min_samples_leaf": [1, 2, 5],
-                "criterion": ["gini", "entropy"]
-              },
-              "n_jobs": -1
-            }
-          }
         }
     }
 }
