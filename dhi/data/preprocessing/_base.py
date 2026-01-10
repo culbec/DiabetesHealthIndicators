@@ -1,17 +1,19 @@
 import pandas as pd
+
+from sklearn.exceptions import NotFittedError
+
 import dhi.data.constants as dconst
 
+from dhi.utils import get_logger
 from dhi.decorators import time_func
 from dhi.data.utils import reduce_memory_usage
 
 
-class Preprocessor:
+class DataPreprocessor:
     def __init__(self, **kwargs) -> None:
         self._init_from_kwargs(**kwargs)
 
     def _init_from_kwargs(self, **kwargs) -> None:
-        from dhi.utils import get_logger
-
         self.logger = get_logger(self.__class__.__name__)
 
         self.is_fitted_ = False
@@ -309,9 +311,7 @@ class Preprocessor:
             elif feature in self.categorical_encoders:
                 scaler_instance = self.categorical_encoders[feature]
             else:
-                self.logger.debug(
-                    f"Feature {feature} not found in the numerical scaling or categorical encoding data"
-                )
+                self.logger.debug(f"Feature {feature} not found in the numerical scaling or categorical encoding data")
                 continue
 
             if not getattr(scaler_instance, "inverse_transform", None):
@@ -366,7 +366,7 @@ class Preprocessor:
         :return pd.DataFrame: The transformed DataFrame
         """
         if not self.is_fitted_:
-            raise RuntimeError(
+            raise NotFittedError(
                 "Preprocessor instance has not been fitted before calling transform(). Fit to dataset first."
             )
         return self._apply_preprocessing_steps(df, fit=False)

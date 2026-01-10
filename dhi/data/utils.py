@@ -3,6 +3,11 @@ import logging
 import numpy as np
 import pandas as pd
 
+from copy import deepcopy
+from typing import Optional, Dict, Any
+
+from numpy.typing import ArrayLike
+
 import dhi.constants as dconst
 from dhi.decorators import time_func
 
@@ -68,3 +73,53 @@ def reduce_memory_usage(
     )
 
     return df_optimized
+
+
+def ensure_df(X: ArrayLike) -> tuple[pd.DataFrame, bool]:
+    """
+    Ensures X is pandas DataFrame, required for data preprocessing.
+
+    If X is already a DataFrame, returns it as-is with was_converted=False.
+    Otherwise, converts to DataFrame with columns named Feature_0, Feature_1, etc.
+
+    :param X: Input data (array-like or DataFrame)
+    :return: Tuple of (pandas DataFrame, was_converted flag)
+    """
+    if isinstance(X, pd.DataFrame):
+        return X, False
+
+    X_arr = np.asarray(X)
+    if X_arr.ndim == 1:
+        X_arr = X_arr.reshape(-1, 1)
+
+    columns = pd.Index([f"Feature_{i}" for i in range(X_arr.shape[1])])
+    return pd.DataFrame(X_arr, columns=columns), True
+
+
+def infer_preprocessor_config_from_df(
+    df: pd.DataFrame,
+    base_config: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+    """
+    Builds a preprocessor config based on the DataFrame's actual column dtypes.
+
+    Detects numerical and categorical columns and populates the config accordingly.
+
+    :param df: The DataFrame to analyze
+    :param base_config: Optional base config to merge with (for scaler/encoder settings)
+    :return: Preprocessor config dict with numerical_features and categorical_features correctly set
+    """
+    config: Dict[str, Any] = deepcopy(base_config) if base_config else {}
+
+    numerical_cols = df.select_dtypes(include=["number"]).columns.tolist()
+    categorical_cols = df.select_dtypes(include=["object", "string", "category"]).columns.tolist()
+
+    config.setdefault("numerical_features", {})
+    config.setdefault("categorical_features", {})
+    config["numerical_features"].setdefault("scaler", {})
+    config["categorical_features"].setdefault("encoder", {})
+
+    config["numerical_features"]["features"] = numerical_cols
+    config["categorical_features"]["features"] = categorical_cols
+
+    return config
