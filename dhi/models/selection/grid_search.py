@@ -427,9 +427,7 @@ class GridSearchCVOptimizer:
 
             # Validate that the refit metric was computed
             if self.refit_metric_ not in metrics:
-                raise KeyError(
-                    f"Refit metric '{self.refit_metric_}' not found in computed metrics: {metrics.keys()}"
-                )
+                raise KeyError(f"Refit metric '{self.refit_metric_}' not found in computed metrics: {metrics.keys()}")
 
             refit_score = metrics.get(self.refit_metric_)
             if refit_score is None:
@@ -468,8 +466,8 @@ class GridSearchCVOptimizer:
                 ci = cv_statistics.confidence_interval
                 ci_str = f", 95% CI: [{ci.lower:.6f}, {ci.upper:.6f}]"
             print(
-                f"  [Candidate {candidate_idx}/{total_candidates}] {params_str} "
-                f": {self.refit_metric_}={mean_score:.6f} +/- {std_score:.6f}{ci_str}"
+                f"  [Candidate {candidate_idx}/{total_candidates}]"
+                f": {self.refit_metric_}={mean_score:.6f} +/- {std_score:.6f}{ci_str}\nparams=({params_str})"
             )
         else:
             self.logger.info(
@@ -482,10 +480,15 @@ class GridSearchCVOptimizer:
             if cv_statistics is not None:
                 ci = cv_statistics.confidence_interval
                 self.logger.info(
-                    "Candidate %d 95%% CI: [%.6f, %.6f]",
+                    "Candidate %d/%d  %s=%0.6f +/- %0.6f, 95%% CI: [%.6f, %.6f]\nparams=%s",
                     candidate_idx,
+                    total_candidates,
+                    self.refit_metric_,
+                    mean_score,
+                    std_score,
                     ci.lower,
                     ci.upper,
+                    params,
                 )
 
         return CVParamSearchResult(
@@ -579,29 +582,6 @@ class GridSearchCVOptimizer:
 
         return self
 
-    def flatten_cv_results(self, include_statistics: bool = True) -> List[Dict[str, Any]]:
-        """
-        Convert CV results to a list of dictionaries for serialization.
-
-        Useful for exporting results to JSON or other formats.
-
-        :param bool include_statistics: Whether to include full statistical analysis.
-        :return List[Dict[str, Any]]: List of result dictionaries.
-        """
-        results: List[Dict[str, Any]] = []
-        for run in self.cv_results_:
-            result_dict: Dict[str, Any] = {
-                "params": run.params,
-                "mean_score": run.mean_score,
-                "std_score": run.std_score,
-                "fold_scores": run.fold_scores,
-            }
-            if include_statistics and run.statistics is not None:
-                result_dict["statistics"] = run.statistics.asdict()
-            results.append(result_dict)
-
-        return results
-
     def get_best_statistics(self) -> Optional[CVFoldStatistics]:
         """
         Retrieve statistical analysis for the best parameter configuration.
@@ -633,3 +613,26 @@ class GridSearchCVOptimizer:
         }
 
         return result
+
+    def flatten_cv_results(self, include_statistics: bool = True) -> List[Dict[str, Any]]:
+        """
+        Convert CV results to a list of dictionaries for serialization.
+
+        Useful for exporting results to JSON or other formats.
+
+        :param bool include_statistics: Whether to include full statistical analysis.
+        :return List[Dict[str, Any]]: List of result dictionaries.
+        """
+        results: List[Dict[str, Any]] = []
+        for run in self.cv_results_:
+            result_dict: Dict[str, Any] = {
+                "params": run.params,
+                "mean_score": run.mean_score,
+                "std_score": run.std_score,
+                "fold_scores": run.fold_scores,
+            }
+            if include_statistics and run.statistics is not None:
+                result_dict["statistics"] = run.statistics.asdict()
+            results.append(result_dict)
+
+        return results

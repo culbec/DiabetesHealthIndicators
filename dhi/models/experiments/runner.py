@@ -21,15 +21,14 @@ from dhi.models.selection.grid_search import GridSearchCVOptimizer
 
 class ExperimentRunner:
     def __init__(self, model_config: Dict[str, Any], preprocessor_config: Dict[str, Any]) -> None:
-        self.logger = get_logger(self.__class__.__name__) # TODO: Reconsider logger naming convention
-        self._is_fitted = False
-
         self._init_model(**model_config)
 
         self._preprocessor = None
         self._preprocessor_config = preprocessor_config
 
     def _init_model(self, **kwargs) -> None:
+        self._is_fitted = False
+
         self._model_name = kwargs.get("model_name", None)
         assert self._model_name is not None and isinstance(self._model_name, str), "model_name must be a string"
         assert (
@@ -85,6 +84,9 @@ class ExperimentRunner:
 
         # Initializing the model instance
         self._model: dconst.ModelType = self._model_cls(**self._params)
+
+        self.logger = get_logger(f"{self.__class__.__name__}.{self._model.__class__.__name__}")
+
         if self._load_path is not None:
             self._load_model()
 
@@ -206,11 +208,11 @@ class ExperimentRunner:
             self._model = optimizer.best_estimator_
             self._preprocessor = optimizer.fitted_preprocessor_
 
-            cv_statistic_report = optimizer.get_statistics_report()
-            self.logger.info(f"Cross-validation statistics report: {cv_statistic_report}")
+            cv_statistics_report = optimizer.get_statistics_report()
+            self.logger.info(f"Cross-validation statistics report: {cv_statistics_report}")
             if self._cv_statistics_path:
                 with open(self._cv_statistics_path, "w") as f:
-                    json.dump(cv_statistic_report, f, indent=4)
+                    json.dump(cv_statistics_report, f, indent=4)
                 self.logger.info(f"Cross-validation statistics dumped to {self._cv_statistics_path}")
         else:
             self.logger.info(
