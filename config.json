@@ -93,7 +93,8 @@
                     "coef0": 0.0,
                     "tol": 1e-3,
                     "C": 1.0,
-                    "epsilon": 1e-1
+                    "epsilon": 1e-1,
+                    "max_iter": -1
                 },
                 "cv_params": {
                     "param_grid": [
@@ -119,8 +120,7 @@
                                 1.5
                             ],
                             "gamma": [
-                                "scale",
-                                "auto"
+                                "scale"
                             ]
                         },
                         {
@@ -134,33 +134,12 @@
                                 1.5
                             ],
                             "gamma": [
-                                "scale",
-                                "auto"
+                                "scale"
                             ],
                             "degree": [
                                 3,
                                 4,
                                 5
-                            ],
-                            "coef0": [
-                                0.0,
-                                0.5,
-                                1.0
-                            ]
-                        },
-                        {
-                            "kernel": [
-                                "sigmoid"
-                            ],
-                            "C": [
-                                0.5,
-                                0.75,
-                                1,
-                                1.5
-                            ],
-                            "gamma": [
-                                "scale",
-                                "auto"
                             ],
                             "coef0": [
                                 0.0,
@@ -184,7 +163,8 @@
                     "coef0": 0.0,
                     "tol": 1e-3,
                     "C": 1.0,
-                    "epsilon": 1e-1
+                    "epsilon": 1e-1,
+                    "max_iter": 10000
                 },
                 "cv_params": {
                     "param_grid": [
@@ -210,10 +190,7 @@
                                 1.5
                             ],
                             "gamma": [
-                                null,
-                                0.01,
-                                0.1,
-                                1.0
+                                "scale"
                             ]
                         },
                         {
@@ -227,35 +204,12 @@
                                 1.5
                             ],
                             "gamma": [
-                                null,
-                                0.01,
-                                0.1
+                                "scale"
                             ],
                             "degree": [
                                 3,
                                 4,
                                 5
-                            ],
-                            "coef0": [
-                                0.0,
-                                0.5,
-                                1.0
-                            ]
-                        },
-                        {
-                            "kernel": [
-                                "sigmoid"
-                            ],
-                            "C": [
-                                0.5,
-                                0.75,
-                                1,
-                                1.5
-                            ],
-                            "gamma": [
-                                null,
-                                0.01,
-                                0.1
                             ],
                             "coef0": [
                                 0.0,

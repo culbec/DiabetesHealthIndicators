@@ -176,6 +176,9 @@ class ExperimentRunner:
                 "Input data X must be a pandas DataFrame for preprocessing"
             )  # Enforcing DataFrame type for now for preprocessing consistency
 
+
+        y = np.asarray(y).ravel()
+
         if with_cv:
             self.logger.info(
                 f"Fitting {self._model_name} on data with shape {X.shape} and target with shape {y.shape} with cross-validation and hyperparameter optimization"
@@ -234,6 +237,14 @@ class ExperimentRunner:
     def predict(self, X: ArrayLike) -> np.ndarray:
         if not self._is_fitted:
             raise NotFittedError(f"Model {self._model_name} is not fitted yet. Call 'fit' before using the model.")
+        
+        if self._preprocessor is None:
+            raise RuntimeError("Preprocessor is not fitted yet. Call 'fit' before using the model.")
+
+        if not isinstance(X, pd.DataFrame):
+            raise TypeError(
+                "Input data X must be a pandas DataFrame for preprocessing"
+            )  # Enforcing DataFrame type for now for preprocessing consistency
 
         X_ = np.asarray(self._preprocessor.transform(X))
         return self._model.predict(X_)
@@ -249,6 +260,14 @@ class ExperimentRunner:
                 f"Model {self._model_name} is not compatible with expected method 'predict_proba'. Unable to perform prediction."
             )
             return None
+        
+        if self._preprocessor is None:
+            raise RuntimeError("Preprocessor is not fitted yet. Call 'fit' before using the model.")
+
+        if not isinstance(X, pd.DataFrame):
+            raise TypeError(
+                "Input data X must be a pandas DataFrame for preprocessing"
+            )  # Enforcing DataFrame type for now for preprocessing consistency
 
         X_ = np.asarray(self._preprocessor.transform(X))
         pred = predict_proba(X_)

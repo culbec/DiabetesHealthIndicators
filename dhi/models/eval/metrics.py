@@ -1,7 +1,6 @@
-import numpy as np
-
 from typing import Literal
-from numpy.typing import ArrayLike
+
+import numpy as np
 
 
 # Regression metrics
@@ -58,6 +57,29 @@ def root_mean_squared_error(y_true: np.ndarray, y_pred: np.ndarray) -> float:
     :return float: The root mean squared error.
     """
     return float(np.sqrt(np.mean((y_true - y_pred) ** 2)))
+
+
+def normalized_root_mean_squared_error(
+    y_true: np.ndarray, y_pred: np.ndarray, normalization: Literal["euclidean", "min-max", "mean"] = "mean"
+) -> float:
+    """
+    Computes the normalized root mean squared error between true and predicted values.
+
+    :param np.ndarray y_true: The true labels.
+    :param np.ndarray y_pred: The predicted labels.
+    :param Literal["euclidean", "min-max", "mean"] normalization: The normalization method, defaults to "mean".
+    :return float: The normalized root mean squared error.
+    """
+    if normalization == "euclidean":
+        denom = np.sqrt(np.mean((y_true * y_true)), dtype=np.float64)
+    elif normalization == "min-max":
+        denom = y_true.max() - y_true.min()
+    elif normalization == "mean":
+        denom = y_true.mean()
+    else:
+        raise ValueError(f"Invalid normalization method: {normalization}")
+
+    return float(root_mean_squared_error(y_true, y_pred) / denom) if denom > 0 else float("inf")
 
 
 def mean_squared_log_error(y_true: np.ndarray, y_pred: np.ndarray) -> float:

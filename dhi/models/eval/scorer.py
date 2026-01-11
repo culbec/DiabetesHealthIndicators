@@ -40,6 +40,7 @@ class Scorer:
             "mean_squared_error": em.mean_squared_error(y_true, y_pred),
             "median_absolute_error": em.median_absolute_error(y_true, y_pred),
             "root_mean_squared_error": em.root_mean_squared_error(y_true, y_pred),
+            "normalized_root_mean_squared_error": em.normalized_root_mean_squared_error(y_true, y_pred),
             "r2": em.r2_score(y_true, y_pred),
             "explained_variance": em.explained_variance_score(y_true, y_pred),
         }
