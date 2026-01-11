@@ -960,13 +960,13 @@ class SVR_(BaseEstimator, RegressorMixin):
         self.dual_coef_ = (self.alpha_ - self.alpha_star_).astype(np.float32)
 
         # Counting the support vectors as the most closer ones to the error tube
-        self.support_ = np.nonzero(np.abs(self.dual_coef_) > self.epsilon)[0]
+        self.support_ = np.nonzero(np.abs(self.dual_coef_) > self.epsilon_)[0]
 
         # Handle edge case: no support vectors found (SMO didn't converge or trivial solution)
         if len(self.support_) == 0:
             self.logger.warning(
                 "No support vectors found (all dual coefficients below epsilon). "
-                "Model will predict bias only. Consider increasing max_iter or adjusting epsilon."
+                "Model will predict bias only. Consider increasin max_iter or adjusting epsilon."
             )
             # Keep empty arrays but mark model as fitted
             self.support_vectors_ = np.asarray([], dtype=np.float32).reshape(0, self.n_features_in_)
