@@ -12,7 +12,7 @@ and normality testing.
 
 import json
 import os
-from dataclasses import dataclass, fields
+from dataclasses import dataclass
 from itertools import product
 from typing import Any, Dict, List, Mapping, Optional, Set, cast
 
@@ -20,16 +20,18 @@ import numpy as np
 import pandas as pd
 from joblib import Parallel, delayed
 from numpy.typing import ArrayLike
-from sklearn.base import BaseEstimator
 
 import dhi.constants as dconst
+
+from dhi.utils import get_logger
 from dhi.models.eval.scorer import Scorer
 from dhi.models.selection.cross_validation import (
     KFoldCVSplitter,
     StratifiedKFoldCVSplitter,
 )
+from dhi.data.factory import build_preprocessor
+from dhi.data.preprocessing._base import DataPreprocessor
 from dhi.statistics.metrics import CVFoldStatistics, analyze_cv_fold_scores
-from dhi.utils import get_logger
 
 # Mapping of common metric aliases to their canonical names
 METRIC_ALIAS_MAP: Mapping[str, str] = {
@@ -169,65 +171,6 @@ def _as_index_array(idxs: ArrayLike) -> np.ndarray:
     return arr.astype(int, copy=False)
 
 
-def _ensure_dataframe(X: ArrayLike) -> tuple[pd.DataFrame, bool]:
-    """
-    Ensure input data is a pandas DataFrame.
-
-    If input is already a DataFrame, returns it unchanged. Otherwise,
-    converts to DataFrame with auto-generated column names (Feature_0, etc.).
-
-    :param ArrayLike X: Input data (array-like or DataFrame).
-    :return tuple[pd.DataFrame, bool]: Tuple of (DataFrame, was_converted_flag).
-    """
-    if isinstance(X, pd.DataFrame):
-        return X, False
-
-    X_arr = np.asarray(X)
-    n_features = X_arr.shape[1] if X_arr.ndim == 2 else 1
-    columns = pd.Index([f"Feature_{i}" for i in range(n_features)])
-    return pd.DataFrame(X_arr, columns=columns), True
-
-
-def _build_preprocessor_config_for_dataframe(
-    df: pd.DataFrame,
-    base_config: Optional[Dict[str, Any]] = None,
-) -> Dict[str, Any]:
-    """
-    Build preprocessor configuration based on DataFrame column types.
-
-    Automatically detects numerical and categorical columns from dtypes
-    and constructs the appropriate configuration dictionary.
-
-    :param pd.DataFrame df: DataFrame to analyze for column types.
-    :param Optional[Dict[str, Any]] base_config: Optional base config with scaler/encoder settings.
-    :return Dict[str, Any]: Preprocessor configuration dictionary.
-    """
-    numerical_cols = df.select_dtypes(include=["number"]).columns.tolist()
-    categorical_cols = df.select_dtypes(include=["object", "string", "category"]).columns.tolist()
-
-    config: Dict[str, Any] = {}
-
-    # Preserve existing scaler/encoder settings if provided
-    if base_config:
-        num_scaler = base_config.get("numerical_features", {}).get("scaler", {})
-        cat_encoder = base_config.get("categorical_features", {}).get("encoder", {})
-    else:
-        num_scaler = {}
-        cat_encoder = {}
-
-    config["numerical_features"] = {
-        "features": numerical_cols,
-        "scaler": num_scaler,
-    }
-
-    config["categorical_features"] = {
-        "features": categorical_cols,
-        "encoder": cat_encoder,
-    }
-
-    return config
-
-
 @dataclass
 class CVParamSearchResult:
     """
@@ -300,10 +243,10 @@ class GridSearchCVOptimizer:
         *,
         model_cls: Any,
         task_type: str,
+        preprocessor_config: Optional[Dict[str, Any]],
         base_params: Dict[str, Any],
         param_grid: Dict[str, List[Any]] | List[Dict[str, List[Any]]],
         cv_params: Optional[Dict[str, Any]] = None,
-        preprocessor_config: Optional[Dict[str, Any]] = None,
     ):
         """
         Initialize the grid search optimizer.
@@ -337,6 +280,8 @@ class GridSearchCVOptimizer:
         self.random_state = self.cv_params.get("random_state", None)
         self.n_jobs = self.cv_params.get("n_jobs", 1)
 
+        self._preprocessor_config = preprocessor_config
+
         # Reserve one CPU core when using all available cores
         # This prevents system unresponsiveness during long searches
         if self.n_jobs == -1:
@@ -347,20 +292,8 @@ class GridSearchCVOptimizer:
         self.cv_results_: List[CVParamSearchResult] = []
         self.best_params_: Dict[str, Any] = {}
         self.best_score_: float = float("-inf") if self.greater_is_better_ else float("inf")
-        self.best_estimator_: Optional[BaseEstimator] = None
-
-        # Configure preprocessor if provided
-        if not preprocessor_config:
-            self.logger.warning(
-                "No preprocessor configuration provided; "
-                "proceeding without data preprocessing during cross-validation"
-            )
-            self._preprocessor_config = None
-            self._preprocessor_cls = None
-        else:
-            self._preprocessor_config = preprocessor_config
-            preprocessor_type = self._preprocessor_config.pop("type", None)
-            self._preprocessor_cls = dconst.DHI_PREPROCESSOR_REGISTRY.get(preprocessor_type, None)
+        self.best_estimator_: Optional[dconst.ModelType] = None
+        self.fitted_preprocessor_: Optional[DataPreprocessor] = None
 
         # Validate task type
         if self.task_type not in {"classification", "regression"}:
@@ -419,9 +352,8 @@ class GridSearchCVOptimizer:
         params: Dict[str, Any],
         candidate_idx: int,
         total_candidates: int,
-        X_df: pd.DataFrame,
-        X_arr: np.ndarray,
-        y_arr: np.ndarray,
+        X: pd.DataFrame,
+        y: np.ndarray,
     ) -> CVParamSearchResult:
         """
         Evaluate a single parameter configuration using cross-validation.
@@ -433,13 +365,14 @@ class GridSearchCVOptimizer:
         :param Dict[str, Any] params: Hyperparameter configuration to evaluate.
         :param int candidate_idx: 1-based index for progress logging.
         :param int total_candidates: Total number of configurations for logging.
-        :param pd.DataFrame X_df: Features as DataFrame (for preprocessor compatibility).
-        :param np.ndarray X_arr: Features as numpy array (for model training).
-        :param np.ndarray y_arr: Target values as numpy array.
+        :param pd.DataFrame X: Features as DataFrame (for preprocessor compatibility).
+        :param np.ndarray y: Target values as numpy array.
         :return CVParamSearchResult: With all evaluation data.
         """
         self.logger.info("Evaluating candidate %d/%d parameters:", candidate_idx, total_candidates)
         self.logger.info("Candidate parameters: %s", params)
+
+        X_arr, y_arr = np.asarray(X), np.asarray(y)
 
         splitter = self._build_splitter()
         fold_scores: List[float] = []
@@ -459,23 +392,20 @@ class GridSearchCVOptimizer:
                 len(val),
             )
 
-            # Apply preprocessing if configured
             # Fit preprocessor on training data only to prevent data leakage
-            if self._preprocessor_cls is not None and self._preprocessor_config is not None:
-                preprocessor = self._preprocessor_cls(**self._preprocessor_config)
+            preprocessor = build_preprocessor(self._preprocessor_config)
 
-                X_tr_subset = X_df.iloc[tr].copy()
-                X_val_subset = X_df.iloc[val].copy()
+            X_tr = X.iloc[tr].copy()
+            X_val = X.iloc[val].copy()
 
-                X_tr_fold = np.asarray(preprocessor.fit_transform(X_tr_subset))
-                X_val_fold = np.asarray(preprocessor.transform(X_val_subset))
-            else:
-                X_tr_fold = X_arr[tr]
-                X_val_fold = X_arr[val]
+            X_tr_fold = np.asarray(preprocessor.fit_transform(X_tr))
+            X_val_fold = np.asarray(preprocessor.transform(X_val))
+
+            y_tr_fold, y_val_fold = y_arr[tr], y_arr[val]
 
             # Train and evaluate model
             estimator = self._build_estimator(params)
-            estimator.fit(X_tr_fold, y_arr[tr])
+            estimator.fit(X_tr_fold, y_tr_fold)
 
             y_pred = estimator.predict(X_val_fold)
 
@@ -490,16 +420,14 @@ class GridSearchCVOptimizer:
             # Compute all metrics for this fold
             scorer = Scorer(estimator, self.task_type)
             metrics = scorer.score(
-                np.asarray(y_arr[val]).ravel(),
-                np.asarray(y_pred).ravel(),
+                y_val_fold.ravel(),
+                y_pred.ravel(),
                 y_proba,
             )
 
             # Validate that the refit metric was computed
             if self.refit_metric_ not in metrics:
-                raise KeyError(
-                    f"Refit metric '{self.refit_metric_}' not found in computed metrics: {metrics.keys()}"
-                )
+                raise KeyError(f"Refit metric '{self.refit_metric_}' not found in computed metrics: {metrics.keys()}")
 
             refit_score = metrics.get(self.refit_metric_)
             if refit_score is None:
@@ -538,8 +466,8 @@ class GridSearchCVOptimizer:
                 ci = cv_statistics.confidence_interval
                 ci_str = f", 95% CI: [{ci.lower:.6f}, {ci.upper:.6f}]"
             print(
-                f"  [Candidate {candidate_idx}/{total_candidates}] {params_str} "
-                f": {self.refit_metric_}={mean_score:.6f} +/- {std_score:.6f}{ci_str}"
+                f"  [Candidate {candidate_idx}/{total_candidates}]"
+                f": {self.refit_metric_}={mean_score:.6f} +/- {std_score:.6f}{ci_str}\nparams=({params_str})"
             )
         else:
             self.logger.info(
@@ -552,10 +480,15 @@ class GridSearchCVOptimizer:
             if cv_statistics is not None:
                 ci = cv_statistics.confidence_interval
                 self.logger.info(
-                    "Candidate %d 95%% CI: [%.6f, %.6f]",
+                    "Candidate %d/%d  %s=%0.6f +/- %0.6f, 95%% CI: [%.6f, %.6f]\nparams=%s",
                     candidate_idx,
+                    total_candidates,
+                    self.refit_metric_,
+                    mean_score,
+                    std_score,
                     ci.lower,
                     ci.upper,
+                    params,
                 )
 
         return CVParamSearchResult(
@@ -579,20 +512,10 @@ class GridSearchCVOptimizer:
         :param ArrayLike y: Target vector (array-like).
         :return GridSearchCVOptimizer: Self, for method chaining.
         """
-        X_arr = np.asarray(X)
-        y_arr = np.asarray(y)
-
-        # Convert to DataFrame for preprocessor compatibility
-        X_df, was_converted = _ensure_dataframe(X)
-
-        # Build preprocessor config if X was converted from array
-        if was_converted and self._preprocessor_cls is not None:
-            self._preprocessor_config = _build_preprocessor_config_for_dataframe(X_df, self._preprocessor_config)
-            self.logger.info(
-                "Built preprocessor config for array input: %d numerical, %d categorical features",
-                len(self._preprocessor_config.get("numerical_features", {}).get("features", [])),
-                len(self._preprocessor_config.get("categorical_features", {}).get("features", [])),
-            )
+        if not isinstance(X, pd.DataFrame):
+            raise TypeError(
+                "Input data X must be a pandas DataFrame for preprocessing"
+            )  # Enforcing DataFrame type for now for preprocessing consistency
 
         # Expand parameter grid to get all candidates
         candidates = _expand_param_grid(self.param_grid)
@@ -606,12 +529,13 @@ class GridSearchCVOptimizer:
         )
 
         # Parallel evaluation using joblib
+        # n_jobs = -1 uses all available CPUs, n_jobs = 1 runs sequentially
         # verbose=10 provides per-task progress updates
         parallel_verbose = 10 if self.n_jobs != 1 else 0
         results = cast(
             List[CVParamSearchResult],
             Parallel(n_jobs=self.n_jobs, verbose=parallel_verbose)(
-                delayed(self._evaluate_candidate)(params, idx, total_candidates, X_df, X_arr, y_arr)
+                delayed(self._evaluate_candidate)(params, idx, total_candidates, X, np.asarray(y))
                 for idx, params in enumerate(candidates, start=1)
             ),
         )
@@ -642,15 +566,13 @@ class GridSearchCVOptimizer:
         )
 
         # Refit best model on full dataset
-        if self._preprocessor_cls is not None and self._preprocessor_config is not None:
-            preprocessor = self._preprocessor_cls(**self._preprocessor_config)
-            X_df_full = X_df.copy()
-            X_arr_full = np.asarray(preprocessor.fit_transform(X_df_full))
-        else:
-            X_arr_full = X_arr
+        self.fitted_preprocessor_ = build_preprocessor(self._preprocessor_config)
+
+        X_arr = np.asarray(self.fitted_preprocessor_.fit_transform(X))
+        y_arr = np.asarray(y)
 
         self.best_estimator_ = self._build_estimator(self.best_params_)
-        self.best_estimator_.fit(X_arr_full, y_arr)
+        self.best_estimator_.fit(X_arr, y_arr)
 
         self.logger.info(
             "Best estimator refitted on full dataset: X = %s, y = %s",
@@ -659,29 +581,6 @@ class GridSearchCVOptimizer:
         )
 
         return self
-
-    def flatten_cv_results(self, include_statistics: bool = True) -> List[Dict[str, Any]]:
-        """
-        Convert CV results to a list of dictionaries for serialization.
-
-        Useful for exporting results to JSON or other formats.
-
-        :param bool include_statistics: Whether to include full statistical analysis.
-        :return List[Dict[str, Any]]: List of result dictionaries.
-        """
-        results: List[Dict[str, Any]] = []
-        for run in self.cv_results_:
-            result_dict: Dict[str, Any] = {
-                "params": run.params,
-                "mean_score": run.mean_score,
-                "std_score": run.std_score,
-                "fold_scores": run.fold_scores,
-            }
-            if include_statistics and run.statistics is not None:
-                result_dict["statistics"] = run.statistics.asdict()
-            results.append(result_dict)
-
-        return results
 
     def get_best_statistics(self) -> Optional[CVFoldStatistics]:
         """
@@ -714,3 +613,26 @@ class GridSearchCVOptimizer:
         }
 
         return result
+
+    def flatten_cv_results(self, include_statistics: bool = True) -> List[Dict[str, Any]]:
+        """
+        Convert CV results to a list of dictionaries for serialization.
+
+        Useful for exporting results to JSON or other formats.
+
+        :param bool include_statistics: Whether to include full statistical analysis.
+        :return List[Dict[str, Any]]: List of result dictionaries.
+        """
+        results: List[Dict[str, Any]] = []
+        for run in self.cv_results_:
+            result_dict: Dict[str, Any] = {
+                "params": run.params,
+                "mean_score": run.mean_score,
+                "std_score": run.std_score,
+                "fold_scores": run.fold_scores,
+            }
+            if include_statistics and run.statistics is not None:
+                result_dict["statistics"] = run.statistics.asdict()
+            results.append(result_dict)
+
+        return results

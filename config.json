@@ -1,6 +1,7 @@
 {
     "DiabetesHealthIndicators": {
         "loader": {
+            "dataset_type": "dhi",
             "dataset_path": "../.datasets/diabetes_health_indicators/diabetes_dataset.csv",
             "separator": ",",
             "decimal": ".",
@@ -11,7 +12,7 @@
             ]
         },
         "preprocessor": {
-            "type": "dhi_default",
+            "dataset_type": "dhi",
             "numerical_features": {
                 "scaler": {
                     "type": "robust_scaler",

@@ -50,7 +50,7 @@ class FeatureScores:
     selected_features: list[str] = field(default_factory=list)
     threshold: float = 0.0
 
-    def select_by_threshold(self, threshold: float) -> list[str]:
+    def select_above_threshold(self, threshold: float) -> list[str]:
         """Select features with normalized score >= threshold."""
         self.threshold = threshold
         self.selected_features = [
@@ -82,7 +82,7 @@ class FeatureScores:
 
 
 @dataclass
-class AutoFeatureSelectionResult:
+class FeatureSelectionResult:
     """
     Result of automated feature selection combining multiple methods.
 
@@ -101,7 +101,7 @@ class AutoFeatureSelectionResult:
     feature_votes: dict[str, int] = field(default_factory=dict)
     feature_rankings: dict[str, float] = field(default_factory=dict)
 
-    def get_feature_summary(self) -> pd.DataFrame:
+    def to_df(self) -> pd.DataFrame:
         """
         Create a summary DataFrame showing scores from all methods for each feature.
 
@@ -128,7 +128,7 @@ class AutoFeatureSelectionResult:
         return result_df.sort_values("avg_rank")
 
 
-def _select_numerical_columns(df: pd.DataFrame, columns: list[str] | None = None) -> list[str]:
+def _select_numerical_features(df: pd.DataFrame, columns: list[str] | None = None) -> list[str]:
     if not columns:
         logger.warning("No columns provided, using all numerical columns")
         columns = df.select_dtypes(include=["number"]).columns.tolist()
@@ -144,7 +144,7 @@ def _select_numerical_columns(df: pd.DataFrame, columns: list[str] | None = None
     return columns
 
 
-def _discrete_x(X: pd.DataFrame | pd.Series, n_bins: int) -> np.ndarray:
+def _discretize_features(X: pd.DataFrame | pd.Series, n_bins: int) -> np.ndarray:
     X_discrete = np.zeros_like(X.values)
 
     # Discretize every feature independently
@@ -179,17 +179,7 @@ def correlation_matrix(
         logger.warning("The dataframe is empty, skipping correlation matrix plot")
         return
 
-    if not columns:
-        logger.warning("No columns provided, using all numerical columns")
-        columns = df.select_dtypes(include=["number"]).columns.tolist()
-    else:
-        logger.info("Filtering columns with DataFrame columns")
-        columns = [column for column in columns if column in df.columns]
-        columns = df[columns].select_dtypes(include=["number"]).columns.tolist()
-
-    if not columns:
-        logger.warning("No numerical columns found, skipping correlation matrix plot")
-        return
+    columns = _select_numerical_features(df, columns)
 
     logger.info(f"Plotting correlation matrix for {columns} out of {len(df.columns)} columns")
 
@@ -220,7 +210,7 @@ def correlation_matrix(
 
     logger.info("Plotting of correlation matrix completed successfully")
 
-
+# TODO: move plot-related methods to separate feature_plots.py file and use the results from the computation methods
 def chi2_independence_test(
     df: pd.DataFrame,
     label_columns: list[str],
@@ -244,7 +234,7 @@ def chi2_independence_test(
     label_columns = list(set(label_columns) - {target_column})
     df = df.drop(columns=label_columns)
 
-    numerical_columns = _select_numerical_columns(df, df.columns.to_list())
+    numerical_columns = _select_numerical_features(df, df.columns.to_list())
     if not numerical_columns:
         logger.warning("No numerical columns found, skipping chi2 independence test")
         return
@@ -266,7 +256,7 @@ def chi2_independence_test(
     feature_names = X.columns.tolist()
 
     # Discretize every feature independently
-    X_discrete = _discrete_x(X, n_bins)
+    X_discrete = _discretize_features(X, n_bins)
 
     logger.info(f"Performing chi2 independence test on {df.columns} out of {len(df.columns)} columns")
     chi2_scores, p_values = skfs.chi2(X_discrete, y)
@@ -312,7 +302,7 @@ def variance_threshold_feature_selection(
     label_columns = list(set(label_columns) - {target_column})
     df = df.drop(columns=label_columns)
 
-    numerical_columns = _select_numerical_columns(df)
+    numerical_columns = _select_numerical_features(df)
     if not numerical_columns:
         logger.warning("No numerical columns found, skipping variance threshold feature selection")
         return np.array([])
@@ -409,7 +399,7 @@ def univariate_feature_selection(
     label_columns = list(set(label_columns) - {target_column})
     df = df.drop(columns=label_columns)
 
-    numerical_columns = _select_numerical_columns(df)
+    numerical_columns = _select_numerical_features(df)
     if not numerical_columns:
         logger.warning("No numerical columns found, skipping univariate feature selection")
         return
@@ -426,7 +416,7 @@ def univariate_feature_selection(
 
     feature_names = X.columns.tolist()
 
-    X_discrete = _discrete_x(X, dconst.DHI_FEATURE_SELECTION_DEFAULT_KBINS_N_BINS)
+    X_discrete = _discretize_features(X, dconst.DHI_FEATURE_SELECTION_DEFAULT_KBINS_N_BINS)
 
     if mode not in dconst.DHI_FEATURE_SELECTION_MODES:
         logger.warning(f"Invalid mode: {mode}, using default mode: {dconst.DHI_FEATURE_SELECTION_DEFAULT_MODE}")
@@ -510,7 +500,7 @@ def relief_feature_selection(
     label_columns = list(set(label_columns) - {target_column})
     df = df.drop(columns=label_columns)
 
-    numerical_columns = _select_numerical_columns(df)
+    numerical_columns = _select_numerical_features(df)
     if not numerical_columns:
         logger.warning("No numerical columns found, skipping relief feature selection")
         return
@@ -572,7 +562,7 @@ def compute_correlation_scores(
         label_columns_to_exclude = list(set(label_columns) - {target_column})
         df = df.drop(columns=[c for c in label_columns_to_exclude if c in df.columns])
 
-    columns = _select_numerical_columns(df, columns)
+    columns = _select_numerical_features(df, columns)
     if not columns:
         logger.warning("No numerical columns found")
         return None
@@ -627,7 +617,7 @@ def compute_chi2_scores(
     label_columns = list(set(label_columns) - {target_column})
     df = df.drop(columns=label_columns)
 
-    numerical_columns = _select_numerical_columns(df, df.columns.to_list())
+    numerical_columns = _select_numerical_features(df, df.columns.to_list())
     if not numerical_columns or target_column not in numerical_columns:
         logger.warning("Invalid columns for chi2 computation")
         return None
@@ -639,7 +629,7 @@ def compute_chi2_scores(
     y = df[target_column].astype(int)
     feature_names = X.columns.tolist()
 
-    X_discrete = _discrete_x(X, n_bins)
+    X_discrete = _discretize_features(X, n_bins)
     chi2_scores, _ = skfs.chi2(X_discrete, y)
     chi2_scores = np.nan_to_num(chi2_scores, nan=0.0, posinf=float(np.finfo(np.float64).max), neginf=0.0)
 
@@ -677,7 +667,7 @@ def compute_variance_scores(
     label_columns = list(set(label_columns) - {target_column})
     df = df.drop(columns=label_columns)
 
-    numerical_columns = _select_numerical_columns(df)
+    numerical_columns = _select_numerical_features(df)
     if not numerical_columns or target_column not in numerical_columns:
         return None
 
@@ -725,7 +715,7 @@ def compute_univariate_scores(
     label_columns = list(set(label_columns) - {target_column})
     df = df.drop(columns=label_columns)
 
-    numerical_columns = _select_numerical_columns(df)
+    numerical_columns = _select_numerical_features(df)
     if not numerical_columns or target_column not in numerical_columns:
         return None
 
@@ -738,7 +728,7 @@ def compute_univariate_scores(
 
     # For chi2-like functions, discretize the input
     if score_func in (skfs.chi2,):
-        X_processed = _discrete_x(X, dconst.DHI_FEATURE_SELECTION_DEFAULT_KBINS_N_BINS)
+        X_processed = _discretize_features(X, dconst.DHI_FEATURE_SELECTION_DEFAULT_KBINS_N_BINS)
     else:
         # Convert to float64 to prevent overflow in dot product operations
         X_processed = np.asarray(X.values, dtype=np.float64)
@@ -769,7 +759,7 @@ def compute_univariate_scores(
     )
 
 
-class AutoFeatureSelector:
+class StatisticalFeatureSelector:
     """
     Automated feature selection combining multiple statistical methods.
 
@@ -779,7 +769,7 @@ class AutoFeatureSelector:
     3. Combine results using various strategies (union, intersection, voting)
 
     Example usage:
-        selector = AutoFeatureSelector(
+        selector = StatisticalFeatureSelector(
             df=df,
             target_column="diabetes_risk_score",
             label_columns=["diabetes_stage", "ethnicity"],
@@ -817,7 +807,7 @@ class AutoFeatureSelector:
         task_type: str = "regression",
     ):
         """
-        Initialize the AutoFeatureSelector.
+        Initialize the StatisticalFeatureSelector.
 
         :param pd.DataFrame df: Input DataFrame containing features and target.
         :param str target_column: Name of the target column.
@@ -837,7 +827,7 @@ class AutoFeatureSelector:
         """Return list of available method names for the current task type."""
         return list(self._available_methods.keys())
 
-    def compute_scores(self, methods: list[str] | None = None) -> dict[str, FeatureScores]:
+    def compute_feature_scores(self, methods: list[str] | None = None) -> dict[str, FeatureScores]:
         """
         Compute feature scores using specified methods.
 
@@ -892,7 +882,7 @@ class AutoFeatureSelector:
         top_percentile: float | None = None,
         method_weights: dict[str, float] | None = None,
         min_votes: int | None = None,
-    ) -> AutoFeatureSelectionResult:
+    ) -> FeatureSelectionResult:
         """
         Select features using multiple methods and combine results.
 
@@ -903,14 +893,14 @@ class AutoFeatureSelector:
         :param float | None top_percentile: If provided, select top percentile of features.
         :param dict[str, float] | None method_weights: Weights for each method (used with WEIGHTED strategy).
         :param int | None min_votes: Minimum votes required (used with custom voting).
-        :return AutoFeatureSelectionResult: Containing selected features and analysis.
+        :return FeatureSelectionResult: Containing selected features and analysis.
         """
         # Compute scores for all requested methods
-        scores = self.compute_scores(methods)
+        scores = self.compute_feature_scores(methods)
 
         if not scores:
             logger.warning("No scores computed, returning empty result")
-            return AutoFeatureSelectionResult()
+            return FeatureSelectionResult()
 
         # Apply selection to each method's scores
         for method_name, feature_scores in scores.items():
@@ -919,23 +909,23 @@ class AutoFeatureSelector:
             elif top_percentile is not None:
                 feature_scores.select_top_percentile(top_percentile)
             else:
-                feature_scores.select_by_threshold(threshold)
+                feature_scores.select_above_threshold(threshold)
 
         # Combine results using the specified strategy
-        result = self._combine_selections(scores, strategy, method_weights, min_votes)
+        result = self._aggregate_selections(scores, strategy, method_weights, min_votes)
         result.strategy = strategy
 
         return result
 
-    def _combine_selections(
+    def _aggregate_selections(
         self,
         scores: dict[str, FeatureScores],
         strategy: SelectionStrategy,
         method_weights: dict[str, float] | None = None,
         min_votes: int | None = None,
-    ) -> AutoFeatureSelectionResult:
+    ) -> FeatureSelectionResult:
         """Combine feature selections from multiple methods."""
-        result = AutoFeatureSelectionResult(method_scores=scores)
+        result = FeatureSelectionResult(method_scores=scores)
 
         # Get all feature names from ALL methods (union of all feature sets)
         all_features: set[str] = set()
@@ -952,7 +942,7 @@ class AutoFeatureSelector:
         result.feature_votes = feature_votes
 
         # Compute average ranking across methods
-        feature_ranks: dict[str, list[int]] = dict.fromkeys(all_features, [])
+        feature_ranks: dict[str, list[int]] = {f: [] for f in all_features}
         for method_scores in scores.values():
             # Rank features by normalized score (higher score = lower rank = better)
             sorted_indices = np.argsort(method_scores.normalized_scores)[::-1]
@@ -1106,7 +1096,7 @@ class AutoFeatureSelector:
 
         fig.show()
 
-    def get_summary_dataframe(self) -> pd.DataFrame:
+    def get_summary_df(self) -> pd.DataFrame:
         """
         Get a summary DataFrame of all computed scores.
 
@@ -1128,7 +1118,7 @@ class AutoFeatureSelector:
         return result_df.sort_values("mean_score", ascending=False)
 
 
-def auto_select_features(
+def select_best_features(
     df: pd.DataFrame,
     target_column: str,
     label_columns: list[str],
@@ -1139,7 +1129,7 @@ def auto_select_features(
     plot: bool = False,
 ) -> list[str]:
     """
-    Convenience function for quick automated feature selection.
+    Convenience function for quick automated statistical feature selection.
 
     :param pd.DataFrame df: Input DataFrame.
     :param str target_column: Name of the target column.
@@ -1154,7 +1144,7 @@ def auto_select_features(
     if methods is None:
         methods = ["f_score", "mutual_info", "correlation", "variance"]
 
-    selector = AutoFeatureSelector(
+    selector = StatisticalFeatureSelector(
         df=df,
         target_column=target_column,
         label_columns=label_columns,

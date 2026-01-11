@@ -10,7 +10,7 @@ from dhi.data.utils import reduce_memory_usage
 from dhi.utils import get_filetype, get_logger
 
 
-class Loader(object):
+class DataLoader(object):
     def __init__(self, **kwargs) -> None:
         self._init_from_kwargs(**kwargs)
 

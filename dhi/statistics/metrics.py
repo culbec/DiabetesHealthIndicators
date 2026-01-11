@@ -398,7 +398,7 @@ def analyze_cv_fold_scores(
     )
 
 
-def _compute_cohens_d(scores_a: np.ndarray, scores_b: np.ndarray) -> Tuple[float, str]:
+def _compute_cohens_dz(scores_a: np.ndarray, scores_b: np.ndarray) -> Tuple[float, str]:
     """
     Compute Cohen's d effect size for paired samples.
 
@@ -490,7 +490,7 @@ def compare_models(
     t_pvalue: float = float(cast(float, ttest_res[1]))
 
     # Compute effect size to assess practical significance
-    cohens_d, effect_interpretation = _compute_cohens_d(arr_a, arr_b)
+    cohens_dz, effect_interpretation = _compute_cohens_dz(arr_a, arr_b)
 
     paired_ttest = HypothesisTestResult(
         test_name="paired_t_test",
@@ -498,7 +498,7 @@ def compare_models(
         p_value=t_pvalue,
         is_significant=t_pvalue < alpha,
         alpha=alpha,
-        effect_size=cohens_d,
+        effect_size=cohens_dz,
         effect_size_interpretation=effect_interpretation,
     )
 

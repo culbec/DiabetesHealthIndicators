@@ -1,9 +1,9 @@
 from dhi.statistics.feature_selection import (
-    AutoFeatureSelectionResult,
-    AutoFeatureSelector,
+    FeatureSelectionResult,
+    StatisticalFeatureSelector,
     FeatureScores,
     SelectionStrategy,
-    auto_select_features,
+    select_best_features,
     compute_chi2_scores,
     compute_correlation_scores,
     compute_univariate_scores,
@@ -27,11 +27,11 @@ from dhi.statistics.metrics import (
 
 __all__ = [
     # Feature Selection
-    "AutoFeatureSelectionResult",
-    "AutoFeatureSelector",
+    "FeatureSelectionResult",
+    "StatisticalFeatureSelector",
     "FeatureScores",
     "SelectionStrategy",
-    "auto_select_features",
+    "select_best_features",
     "compute_chi2_scores",
     "compute_correlation_scores",
     "compute_univariate_scores",

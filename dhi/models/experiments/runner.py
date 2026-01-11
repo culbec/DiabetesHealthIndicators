@@ -5,21 +5,30 @@ from typing import Any, Dict, Mapping, Optional
 
 import joblib
 import numpy as np
+import pandas as pd
+
 from numpy.typing import ArrayLike
+from sklearn.exceptions import NotFittedError
 
 import dhi.constants as dconst
 from dhi.decorators import time_func
+from dhi.data.factory import build_preprocessor
+from dhi.utils import get_logger, validate_param_grid
+
 from dhi.models.eval.scorer import Scorer
 from dhi.models.selection.grid_search import GridSearchCVOptimizer
-from dhi.utils import get_logger, validate_param_grid
 
 
 class ExperimentRunner:
-    def __init__(self, preprocessor_config: Dict[str, Any], ml_config: Dict[str, Any]) -> None:
-        self._preprocessor_config = preprocessor_config
-        self._init_from_kwargs(**ml_config)
+    def __init__(self, model_config: Dict[str, Any], preprocessor_config: Dict[str, Any]) -> None:
+        self._init_model(**model_config)
 
-    def _init_from_kwargs(self, **kwargs) -> None:
+        self._preprocessor = None # TODO: handle case where model is loaded from pretrained path and preprocessor may remain undefined and unfitted on training data
+        self._preprocessor_config = preprocessor_config
+
+    def _init_model(self, **kwargs) -> None:
+        self._is_fitted = False
+
         self._model_name = kwargs.get("model_name", None)
         assert self._model_name is not None and isinstance(self._model_name, str), "model_name must be a string"
         assert (
@@ -44,7 +53,7 @@ class ExperimentRunner:
             if self._metrics_path is not None
             else None
         )
-        
+
         self._cv_statistics_path = kwargs.get("cv_statistics_path", None)
         assert self._cv_statistics_path is None or isinstance(
             self._cv_statistics_path, (str, pathlib.Path)
@@ -75,6 +84,9 @@ class ExperimentRunner:
 
         # Initializing the model instance
         self._model: dconst.ModelType = self._model_cls(**self._params)
+
+        self.logger = get_logger(f"{self.__class__.__name__}.{self._model.__class__.__name__}")
+
         if self._load_path is not None:
             self._load_model()
 
@@ -83,8 +95,6 @@ class ExperimentRunner:
             fn = getattr(self._model, method, None)
             if not callable(fn):
                 raise TypeError(f"The model {self._model_name} must implement the method '{method}()'")
-
-        self.logger = get_logger(self._model.__class__.__name__)
 
     @property
     def model_name(self) -> str:
@@ -115,7 +125,12 @@ class ExperimentRunner:
         if not (self._load_path is not None and self._load_path.exists()):
             raise FileNotFoundError(f"Model file not found at {self._load_path}")
 
-        self._model = joblib.load(self._load_path)
+        try:
+            self._model = joblib.load(self._load_path)
+            self.logger.info(f"Model loaded from {self._load_path}")
+        except Exception as e:
+            self.logger.error(f"Failed to load model from {self._load_path}: {e}")
+            raise
 
     @time_func
     def score(self, X: ArrayLike, y: ArrayLike) -> Mapping[str, Optional[float]]:
@@ -156,11 +171,14 @@ class ExperimentRunner:
         :param ArrayLike y: The target data
         :param bool with_cv: Whether to perform cross-validation, defaults to False
         """
-        X_, y_ = np.asarray(X), np.asarray(y)
+        if not isinstance(X, pd.DataFrame):
+            raise TypeError(
+                "Input data X must be a pandas DataFrame for preprocessing"
+            )  # Enforcing DataFrame type for now for preprocessing consistency
 
         if with_cv:
             self.logger.info(
-                f"Fitting {self._model_name} on data with shape {X_.shape} and target with shape {y_.shape} with cross-validation and hyperparameter optimization"
+                f"Fitting {self._model_name} on data with shape {X.shape} and target with shape {y.shape} with cross-validation and hyperparameter optimization"
             )
             self.logger.info(
                 f"Performing cross-validation with params: {self._cv_params}\nand hyperparameter optimization grid: {self._param_grid}"
@@ -169,12 +187,12 @@ class ExperimentRunner:
             optimizer = GridSearchCVOptimizer(
                 model_cls=self._model_cls,
                 task_type=self._task_type,
+                preprocessor_config=self._preprocessor_config,
                 base_params=self._params,
                 param_grid=self._param_grid,
                 cv_params=self._cv_params,
-                preprocessor_config=self._preprocessor_config,
             )
-            optimizer.fit(X_, y_)
+            optimizer.fit(X, y)
 
             self.logger.info(f"Best hyperparameters: {optimizer.best_params_}")
             self.logger.info(f"Best cross-validation {optimizer.refit_metric_} score: {optimizer.best_score_}")
@@ -188,28 +206,43 @@ class ExperimentRunner:
                     f"The best estimator returned by {GridSearchCVOptimizer.__name__} has an unsupported type"
                 )
             self._model = optimizer.best_estimator_
-            
-            cv_statistic_report = optimizer.get_statistics_report()
-            self.logger.info(f"Cross-validation statistics report: {cv_statistic_report}")
+            self._preprocessor = optimizer.fitted_preprocessor_
+
+            cv_statistics_report = optimizer.get_statistics_report()
+            self.logger.info(f"Cross-validation statistics report: {cv_statistics_report}")
             if self._cv_statistics_path:
                 with open(self._cv_statistics_path, "w") as f:
-                    json.dump(cv_statistic_report, f, indent=4)
+                    json.dump(cv_statistics_report, f, indent=4)
                 self.logger.info(f"Cross-validation statistics dumped to {self._cv_statistics_path}")
         else:
             self.logger.info(
-                f"Fitting {self._model_name} on data with shape {X_.shape} and target with shape {y_.shape} without cross-validation"
+                f"Fitting {self._model_name} on data with shape {X.shape} and target with shape {y.shape} without cross-validation"
             )
+
+            self._preprocessor = build_preprocessor(self._preprocessor_config)
+
+            X_ = np.asarray(self._preprocessor.fit_transform(X))
+            y_ = np.asarray(y)
+
             self._model.fit(X_, y_)
             self.logger.info(f"Fitted model: {self._model}")
 
+        self._is_fitted = True
         self._save_model()
 
     @time_func
     def predict(self, X: ArrayLike) -> np.ndarray:
-        return self._model.predict(np.asarray(X))
+        if not self._is_fitted:
+            raise NotFittedError(f"Model {self._model_name} is not fitted yet. Call 'fit' before using the model.")
+
+        X_ = np.asarray(self._preprocessor.transform(X))
+        return self._model.predict(X_)
 
     @time_func
     def predict_proba(self, X: ArrayLike) -> Optional[np.ndarray]:
+        if not self._is_fitted:
+            raise NotFittedError(f"Model {self._model_name} is not fitted yet. Call 'fit' before using the model.")
+
         predict_proba = getattr(self._model, "predict_proba", None)
         if predict_proba is None or not callable(predict_proba):
             self.logger.warning(
@@ -217,5 +250,6 @@ class ExperimentRunner:
             )
             return None
 
-        pred = predict_proba(np.asarray(X))
+        X_ = np.asarray(self._preprocessor.transform(X))
+        pred = predict_proba(X_)
         return np.asarray(pred) if pred is not None else pred
