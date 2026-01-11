@@ -1,17 +1,21 @@
 # Partial credits to: https://github.com/nihil21/custom-svm/blob/master/src/svm.py
 
+import gc
 import logging
 from typing import Any, Callable, Optional, Union
 
 import numpy as np
+import plotly.graph_objects as go
 from numpy.typing import ArrayLike
+from plotly.subplots import make_subplots
 from sklearn.base import BaseEstimator, RegressorMixin
 from sklearn.exceptions import NotFittedError
 
 DHI_SVR_KERNEL_TYPES: list[str] = ["linear", "poly", "rbf", "sigmoid"]
 DHI_SVR_DEFAULT_KERNEL: str = "auto"
 DHI_SVR_DEFAULT_C: float = 1.0
-DHI_SVR_DEFAULT_EPSILON: float = 1e-1
+DHI_SVR_DEFAULT_EPSILON: float | str = 1e-1
+DHI_SVR_EPSILON_SCALE_FACTOR: float = 0.1  # Multiplier for auto epsilon: epsilon = factor * std(y)
 DHI_SVR_DEFAULT_TOL: float = 1e-3
 DHI_SVR_DEFAULT_MAX_ITER: int = 1000
 DHI_SVR_DEFAULT_MAX_PASSES: int = 50
@@ -22,6 +26,12 @@ DHI_SVR_DEFAULT_COEF0: float | None = None
 DHI_SVR_DEFAULT_SHRINKING: bool = True
 DHI_SVR_DEFAULT_SHRINKING_INTERVAL: int = 50
 DHI_SVR_DEFAULT_KERNEL_BATCH_SIZE: int = 5000
+# Auto-disable kernel caching above this sample count to prevent OOM
+DHI_SVR_MAX_SAMPLES_FOR_CACHE: int = 15000
+# Memory limits for chunked kernel computation
+DHI_SVR_MAX_CHUNK_BYTES: int = 500 * 1024 * 1024  # 500 MB per chunk
+DHI_SVR_MIN_CHUNK_BATCH_SIZE: int = 500
+DHI_SVR_MAX_CHUNK_BATCH_SIZE: int = 5000
 
 DHI_SVR_X_NEAR_ZERO: float = 1e-12
 
@@ -146,7 +156,7 @@ class SVR_(BaseEstimator, RegressorMixin):
         gamma: float | str = DHI_SVR_DEFAULT_GAMMA,
         degree: int = DHI_SVR_DEFAULT_DEGREE,
         coef0: float | None = DHI_SVR_DEFAULT_COEF0,
-        epsilon: float = DHI_SVR_DEFAULT_EPSILON,
+        epsilon: float | str = DHI_SVR_DEFAULT_EPSILON,
         tol: float = DHI_SVR_DEFAULT_TOL,
         max_iter: int = DHI_SVR_DEFAULT_MAX_ITER,
         max_passes: int = DHI_SVR_DEFAULT_MAX_PASSES,
@@ -193,6 +203,7 @@ class SVR_(BaseEstimator, RegressorMixin):
         self.gamma_: Optional[float] = None
         self.degree_: Optional[int] = None
         self.coef0_: Optional[float] = None
+        self.epsilon_: float = float(epsilon) if isinstance(epsilon, (int, float)) else 0.1
 
         self.a_: np.ndarray = np.asarray([])
         self.sign_: np.ndarray = np.asarray([])
@@ -207,6 +218,8 @@ class SVR_(BaseEstimator, RegressorMixin):
 
         self.support_: np.ndarray = np.asarray([])
         self.support_vectors_: np.ndarray = np.asarray([])
+        self.support_dual_coef_: np.ndarray = np.asarray([])
+        self._fitted_no_sv_: Optional[bool] = None  # None means not fitted
 
         self.kernel_stats_: Optional[dict[str, Any]] = None
         self.passes_: Optional[int] = None
@@ -238,15 +251,12 @@ class SVR_(BaseEstimator, RegressorMixin):
         :param dict state: The object's state
         """
         self.__dict__.update(state)
-        # Reinitialize the logger after deserialization
         from dhi.utils import get_logger
 
         self.logger = get_logger(
             self.__class__.__name__,
             level=logging.DEBUG if self.verbose else logging.INFO,
         )
-        # Ensure kernel function is reconstructed lazily on first use.
-        # (It was intentionally excluded from pickling because it may be a lambda.)
         self.kernel_func_ = None
 
     def _resolve_gamma(self, X: Optional[ArrayLike]) -> float:
@@ -267,11 +277,9 @@ class SVR_(BaseEstimator, RegressorMixin):
         X_ = np.asarray(X, dtype=np.float64)
         n_features = X_.shape[1]
 
-        # Handle numeric gamma (explicit value)
         if isinstance(self.gamma, (int, float)):
             return float(self.gamma)
 
-        # Handle string gamma options
         gamma_str = str(self.gamma).lower()
 
         if gamma_str == "auto":
@@ -297,8 +305,32 @@ class SVR_(BaseEstimator, RegressorMixin):
                 f"Invalid gamma value: '{self.gamma}'. Expected 'scale', 'auto', or a numeric value."
             )
 
-        # Clip gamma to avoid numerical issues
         return float(np.clip(gamma, DHI_SVR_X_NEAR_ZERO, 1 / DHI_SVR_X_NEAR_ZERO))
+
+    def _resolve_epsilon(self, y: ArrayLike) -> float:
+        """
+        Resolve the epsilon parameter.
+
+        Supports:
+        - "auto": epsilon = DHI_SVR_EPSILON_SCALE_FACTOR * std(y)
+        - float: use the provided value directly
+
+        :param y: Target values used to compute epsilon for "auto" mode.
+        :return: The resolved epsilon value.
+        """
+        if self.epsilon_ is not None:
+            return self.epsilon_
+        
+        if isinstance(self.epsilon, (int, float)):
+            return float(self.epsilon)
+
+        if str(self.epsilon).lower() == "auto":
+            y_std = float(np.std(np.asarray(y)))
+            epsilon = DHI_SVR_EPSILON_SCALE_FACTOR * y_std
+            self.logger.debug(f"Using 'auto' epsilon: {DHI_SVR_EPSILON_SCALE_FACTOR} * {y_std:.4f} = {epsilon:.4f}")
+            return max(epsilon, DHI_SVR_X_NEAR_ZERO)
+
+        raise SVRValidationError(f"Invalid epsilon value: '{self.epsilon}'. Expected 'auto' or a numeric value.")
 
     def _resolve_kernel_func(self) -> Callable:
         """
@@ -317,12 +349,9 @@ class SVR_(BaseEstimator, RegressorMixin):
 
         match self.kernel:
             case "linear":
-                # Linear kernel doesn't use gamma, coef0, or degree
-                # Reset to defaults for consistency
                 self.gamma = DHI_SVR_DEFAULT_GAMMA
                 self.coef0 = DHI_SVR_DEFAULT_COEF0
                 self.degree = DHI_SVR_DEFAULT_DEGREE
-                # Resolved values are None for unused parameters
                 self.gamma_ = None
                 self.coef0_ = DHI_SVR_DEFAULT_COEF0
                 self.degree_ = DHI_SVR_DEFAULT_DEGREE
@@ -338,10 +367,13 @@ class SVR_(BaseEstimator, RegressorMixin):
                     raise SVRKernelError("Gamma parameter must be resolved before using the poly kernel.")
 
                 gamma_, coef0_, degree_ = self.gamma_, self.coef0_, self.degree_
+                max_base = np.float64(1e300) ** (1.0 / degree_) if degree_ > 0 else np.inf
 
                 def poly_kernel(x, y):
                     x, y = np.atleast_2d(x), np.atleast_2d(y)
-                    return (gamma_ * (x @ y.T) + coef0_) ** degree_
+                    base = gamma_ * (x @ y.T) + coef0_
+                    base = np.clip(base, -max_base, max_base)
+                    return base**degree_
 
                 self.logger.debug(
                     f"Using a polynomial kernel with the following parameters: gamma={self.gamma_}, coef0={self.coef0_}, degree={self.degree_}"
@@ -421,12 +453,12 @@ class SVR_(BaseEstimator, RegressorMixin):
 
         :param ArrayLike A: The first input data (n_a samples x d features)
         :param ArrayLike B: The second input data (n_b samples x d features)
-        :return np.ndarray: The kernel matrix (n_a x n_b)
+        :return np.ndarray: The kernel matrix (n_a x n_b) in float32 to reduce memory
         """
         if self.kernel_func_ is None:
             self.kernel_func_ = self._resolve_kernel_func()
 
-        return np.asarray(self.kernel_func_(A, B), dtype=np.float64)
+        return np.asarray(self.kernel_func_(A, B), dtype=np.float32)
 
     def _K(self, i: int, j: int) -> float:
         """
@@ -487,9 +519,11 @@ class SVR_(BaseEstimator, RegressorMixin):
             self.kernel_func_ = self._resolve_kernel_func()
 
         # Vectorized: compute K(all_samples, sample_ii) and K(all_samples, sample_ij)
-        K_ii = np.asarray(self.kernel_func_(self.X_, self.X_[ii : ii + 1])).ravel()  # (n_samples,)
-        K_ij = np.asarray(self.kernel_func_(self.X_, self.X_[ij : ij + 1])).ravel()  # (n_samples,)
-        self.errors_ += sign_i * delta_ai * K_ii + sign_j * delta_aj * K_ij + delta_b
+        K_ii = np.asarray(self.kernel_func_(self.X_, self.X_[ii : ii + 1]), dtype=np.float32).ravel()
+        K_ij = np.asarray(self.kernel_func_(self.X_, self.X_[ij : ij + 1]), dtype=np.float32).ravel()
+        self.errors_ += (
+            np.float32(sign_i * delta_ai) * K_ii + np.float32(sign_j * delta_aj) * K_ij + np.float32(delta_b)
+        )
 
     def _phi(self, idx: int) -> float:
         """
@@ -507,9 +541,9 @@ class SVR_(BaseEstimator, RegressorMixin):
         err = self.errors_[sample_idx]
 
         if idx < self.n_samples_:
-            return float(-err - self.epsilon)
+            return float(-err - self.epsilon_)
         else:
-            return float(err - self.epsilon)
+            return float(err - self.epsilon_)
 
     def _violates_kkt_for_index(self, idx: int) -> bool:
         """
@@ -567,12 +601,11 @@ class SVR_(BaseEstimator, RegressorMixin):
         if self.shrinking and (self.active_set_ is not None):
             viol[~self.active_set_] = 0.0
 
-        # Ignoring indices by setting their violation to 0
         if ignore_indices:
             viol[list(ignore_indices)] = 0.0
 
         max_viol = float(np.max(viol))
-        if max_viol <= self.tol and np.all(np.abs(self.errors_) <= self.epsilon + self.tol):
+        if max_viol <= self.tol and np.all(np.abs(self.errors_) <= self.epsilon_ + self.tol):
             self.logger.debug("No optimizable KKT violations found, algorithm converged")
             return None
 
@@ -620,11 +653,7 @@ class SVR_(BaseEstimator, RegressorMixin):
         opposite_sign_mask = self.sign_ != sign_idx
         opposite_sign_mask[idx] = False
 
-        # Exclude same-sample twin
-        if idx < self.n_samples_:
-            same_sample_twin = idx + self.n_samples_
-        else:
-            same_sample_twin = idx - self.n_samples_
+        same_sample_twin = idx + self.n_samples_ if idx < self.n_samples_ else idx - self.n_samples_
         opposite_sign_mask[same_sample_twin] = False
 
         # Apply shrinking mask if active
@@ -634,8 +663,6 @@ class SVR_(BaseEstimator, RegressorMixin):
         if not np.any(opposite_sign_mask):
             return None
 
-        # For opposite-sign pairs, the constraint forces both to move together,
-        # so pick a second index with gradient in the same direction.
         gradients = self.phi_cache_
         if gradient_idx > 0:
             # First index wants to increase; pick second with largest positive gradient
@@ -668,7 +695,6 @@ class SVR_(BaseEstimator, RegressorMixin):
         alpha_i, alpha_j = self.a_[idx_i], self.a_[idx_j]
         sign_i, sign_j = self.sign_[idx_i], self.sign_[idx_j]
 
-        # Ensuring the bounds are of the same sign if the dual variables are on opposite sides of the error tube
         if sign_i == sign_j:
             W = max(0, alpha_i + alpha_j - self.C)
             H = min(self.C, alpha_i + alpha_j)
@@ -694,7 +720,6 @@ class SVR_(BaseEstimator, RegressorMixin):
 
         sign_i, sign_j = self.sign_[idx_i], self.sign_[idx_j]
 
-        # Get sample indices
         ii = idx_i if idx_i < self.n_samples_ else idx_i - self.n_samples_
         ij = idx_j if idx_j < self.n_samples_ else idx_j - self.n_samples_
 
@@ -712,7 +737,6 @@ class SVR_(BaseEstimator, RegressorMixin):
         if eta < np.finfo(float).eps:
             return False
 
-        # SMO update depends on whether the pair has same or opposite signs
         if sign_i * sign_j < 0:
             alpha_j_new = alpha_j_old + (self.phi_cache_[idx_i] + self.phi_cache_[idx_j]) / eta
         else:
@@ -739,12 +763,11 @@ class SVR_(BaseEstimator, RegressorMixin):
         i_free = (alpha_i_new > eps_bound) and (alpha_i_new < self.C - eps_bound)
         j_free = (alpha_j_new > eps_bound) and (alpha_j_new < self.C - eps_bound)
 
-        # Update bias based on free support vectors
         if i_free:
-            target_err = self.epsilon if idx_i < self.n_samples_ else -self.epsilon
+            target_err = self.epsilon_ if idx_i < self.n_samples_ else -self.epsilon_
             self.b_ = b_old + target_err - self.errors_[ii] - sign_i * delta_i * Kii - sign_j * delta_j * Kij
         elif j_free:
-            target_err = self.epsilon if idx_j < self.n_samples_ else -self.epsilon
+            target_err = self.epsilon_ if idx_j < self.n_samples_ else -self.epsilon_
             self.b_ = b_old + target_err - self.errors_[ij] - sign_i * delta_i * Kij - sign_j * delta_j * Kjj
 
         delta_b = self.b_ - b_old
@@ -756,9 +779,9 @@ class SVR_(BaseEstimator, RegressorMixin):
         """
         Computes the phi cache.
 
-        :return np.ndarray: The phi cache
+        :return np.ndarray: The phi cache (float32 to reduce memory)
         """
-        return np.array([self._phi(i) for i in range(2 * self.n_samples_)], dtype=float)
+        return np.array([self._phi(i) for i in range(2 * self.n_samples_)], dtype=np.float32)
 
     def _smo_optimize(self) -> None:
         """
@@ -776,11 +799,9 @@ class SVR_(BaseEstimator, RegressorMixin):
 
         self.phi_cache_ = self._compute_phi_cache()
 
-        # Initialize shrinking active set
         if self.shrinking:
             self.active_set_ = np.ones(2 * self.n_samples_, dtype=bool)
         else:
-            self.logger.debug("Shrinking is not enabled, initializing active set as None")
             self.active_set_ = None
 
         while passes < self.max_passes and iters < self.max_iter:
@@ -843,37 +864,19 @@ class SVR_(BaseEstimator, RegressorMixin):
             failed_indices.add(i)
             iters += 1
 
-        if self.shrinking and (self.active_set_ is not None):
-            self.active_set_[:] = True
-            self.phi_cache_ = self._compute_phi_cache()
-
         if passes >= self.max_passes:
-            self.logger.warning(f"SMO algorithm did not converge after {self.max_passes} passes")
+            self.logger.debug(f"SMO algorithm did not converge after {self.max_passes} passes")
         if iters >= self.max_iter:
-            self.logger.warning(f"SMO algorithm did not converge after {self.max_iter} iterations")
+            self.logger.debug(f"SMO algorithm did not converge after {self.max_iter} iterations")
 
-        self.logger.info(f"SMO algorithm OK steps: {ok_steps}, fail steps: {fail_steps}")
+        self.logger.debug(f"SMO algorithm OK steps: {ok_steps}, fail steps: {fail_steps}")
 
-        # Vectorized final error computation (avoids O(n^2) individual kernel calls)
-        beta = self.a_[: self.n_samples_] - self.a_[self.n_samples_ :]
-        if self.kernel_matrix_ is not None:
-            f = beta @ self.kernel_matrix_ + self.b_
-            self.errors_ = np.array(f - self.y_, dtype=np.float64)
-        else:
-            # Chunked kernel computation to limit memory usage
-            # Memory per chunk: O(n_samples * kernel_batch_size) instead of O(n_samples^2)
-            batch_size = max(DHI_SVR_DEFAULT_KERNEL_BATCH_SIZE, self.kernel_batch_size)
-            self.errors_ = np.empty(self.n_samples_, dtype=np.float64)
-
-            for start in range(0, self.n_samples_, batch_size):
-                end = min(start + batch_size, self.n_samples_)
-                self.logger.debug(f"Computing kernel matrix for batch {start}:{end}")
-
-                # K_chunk shape: (n_samples, kernel_batch_size)
-                K_chunk = self._compute_kernel_matrix(self.X_, self.X_[start:end])
-                # f_chunk = beta @ K_chunk + b, shape: (kernel_batch_size,)
-                f_chunk = beta @ K_chunk + self.b_
-                self.errors_[start:end] = f_chunk - self.y_[start:end]
+        # Free SMO working arrays before final error computation to reduce memory pressure
+        del self.phi_cache_
+        self.phi_cache_ = np.asarray([])
+        if self.active_set_ is not None:
+            del self.active_set_
+            self.active_set_ = None
 
         self.passes_ = passes
         self.iters_ = iters
@@ -886,7 +889,8 @@ class SVR_(BaseEstimator, RegressorMixin):
 
         :raises NotFittedError: If the model is not fitted
         """
-        if self.X_ is None or self.dual_coef_ is None or self.b_ is None:
+        # Check if fit() was called by looking for the _fitted_no_sv_ flag (None means not fitted)
+        if self._fitted_no_sv_ is None:
             raise NotFittedError(
                 "This SVR_ instance is not fitted yet. Call 'fit' with appropriate arguments before using this estimator."
             )
@@ -902,17 +906,28 @@ class SVR_(BaseEstimator, RegressorMixin):
         if not self._validate_data(X, y):
             raise SVRValidationError("Provided data cannot be fed to the SVR model")
 
-        X, y = np.asarray(X), np.asarray(y).ravel()
+        X = np.asarray(X, dtype=np.float32)
+        y = np.asarray(y, dtype=np.float32).ravel()
 
         self.X_, self.y_ = X, y
         self.n_samples_, self.n_features_in_ = X.shape[0], X.shape[1]
 
         self.logger.debug(f"Input data shape: {self.X_.shape}, target data shape: {self.y_.shape}")
-        self.logger.debug(f"Number of samples: {self.n_samples_}, number of features: {self.n_features_in_}")
 
-        # Resolving the kernel coefficient and the kernel function
+        effective_cache_kernel = self.cache_kernel
+        if self.n_samples_ > DHI_SVR_MAX_SAMPLES_FOR_CACHE and self.cache_kernel:
+            kernel_mem_gb = (self.n_samples_**2 * 4) / (1024**3)  # float32
+            self.logger.warning(
+                f"Dataset too large ({self.n_samples_} samples) for kernel caching "
+                f"(would require ~{kernel_mem_gb:.1f} GB). Disabling cache_kernel."
+            )
+            effective_cache_kernel = False
+
         self.gamma_ = self._resolve_gamma(self.X_)
         self.logger.debug(f"Resolved gamma: {self.gamma_}")
+
+        self.epsilon_ = float(self._resolve_epsilon(y)) or float(DHI_SVR_DEFAULT_EPSILON)
+        self.logger.debug(f"Resolved epsilon: {self.epsilon_}")
 
         self.kernel_func_ = self._resolve_kernel_func()
 
@@ -928,58 +943,95 @@ class SVR_(BaseEstimator, RegressorMixin):
         # The bias term
         self.b_ = 0.0
 
-        # Caching the kernel matrix, if specified
-        if self.cache_kernel:
-            self.kernel_matrix_ = self._compute_kernel_matrix(X, X)
+        if effective_cache_kernel:
+            self.kernel_matrix_ = self._compute_kernel_matrix(X, X).astype(np.float32)
             self.logger.debug("Kernel matrix cached")
         else:
-            self.logger.debug("Not caching kernel matrix")
+            self.kernel_matrix_ = None
 
-        # Initial errors are the negative of the target data
-        self.errors_ = -y.copy()
+        self.errors_ = -y.copy().astype(np.float32)
 
-        # Sequential Minimal Optimization (SMO) algorithm step
         self._smo_optimize()
 
         self.alpha_, self.alpha_star_ = (
             self.a_[: self.n_samples_].copy(),
             self.a_[self.n_samples_ :].copy(),
         )
-        self.dual_coef_ = self.alpha_ - self.alpha_star_
+        self.dual_coef_ = (self.alpha_ - self.alpha_star_).astype(np.float32)
 
         # Counting the support vectors as the most closer ones to the error tube
-        self.support_ = np.nonzero(np.abs(self.dual_coef_) > self.epsilon)[0]
-        self.support_vectors_ = self.X_[self.support_]
+        self.support_ = np.nonzero(np.abs(self.dual_coef_) > self.epsilon_)[0]
 
-        # Kernel stats
+        # Handle edge case: no support vectors found (SMO didn't converge or trivial solution)
+        if len(self.support_) == 0:
+            self.logger.warning(
+                "No support vectors found (all dual coefficients below epsilon). "
+                "Model will predict bias only. Consider increasin max_iter or adjusting epsilon."
+            )
+            # Keep empty arrays but mark model as fitted
+            self.support_vectors_ = np.asarray([], dtype=np.float32).reshape(0, self.n_features_in_)
+            self.support_dual_coef_ = np.asarray([], dtype=np.float32)
+            self._fitted_no_sv_ = True
+        else:
+            self.support_vectors_ = self.X_[self.support_].astype(np.float32)
+            self.support_dual_coef_ = self.dual_coef_[self.support_].astype(np.float32)
+            self._fitted_no_sv_ = False
+
+        # Kernel stats (compute on float32 to avoid memory doubling)
         self.kernel_stats_ = {}
-        if self.kernel_matrix_ is not None:
-            km = np.asarray(self.kernel_matrix_, dtype=np.float64)
-            if np.all(np.isfinite(km)):
-                self.kernel_stats_ = {
-                    "min": float(np.min(km)),
-                    "max": float(np.max(km)),
-                    "mean": float(np.mean(km)),
-                    "std": float(np.std(km)),
-                    "var": float(np.var(km)),
-                    "median": float(np.median(km)),
-                }
+        if self.kernel_matrix_ is not None and np.all(np.isfinite(self.kernel_matrix_)):
+            self.kernel_stats_ = {
+                "min": float(np.min(self.kernel_matrix_)),
+                "max": float(np.max(self.kernel_matrix_)),
+                "mean": float(np.mean(self.kernel_matrix_)),
+                "std": float(np.std(self.kernel_matrix_)),
+                "var": float(np.var(self.kernel_matrix_)),
+                "median": float(np.median(self.kernel_matrix_)),
+            }
 
+        # Free large arrays no longer needed for prediction to reduce memory footprint
+        # Prediction only needs: support_vectors_, support_dual_coef_, b_, kernel params
+        del self.a_, self.sign_, self.errors_
+        self.a_ = np.asarray([])
+        self.sign_ = np.asarray([])
+        self.errors_ = np.asarray([])
+
+        # Free alpha arrays (we have dual_coef_ and support_dual_coef_)
+        del self.alpha_, self.alpha_star_
+        self.alpha_ = np.asarray([])
+        self.alpha_star_ = np.asarray([])
+
+        # Free kernel matrix cache (will recompute during prediction if needed)
+        if self.kernel_matrix_ is not None:
+            del self.kernel_matrix_
+            self.kernel_matrix_ = None
+
+        # Free full training data - only keep support vectors for prediction
+        del self.X_, self.y_
+        self.X_ = np.asarray([])
+        self.y_ = np.asarray([])
+
+        self.logger.debug(
+            f"Memory optimized: keeping {len(self.support_)} support vectors "
+            f"out of {self.n_samples_} training samples ({100*len(self.support_)/self.n_samples_:.1f}%)"
+        )
+
+        gc.collect()
         return self
 
     def predict(self, X: ArrayLike) -> np.ndarray:
         """
         Predicts the output of the SVR model for the given input data.
 
-        Uses chunked kernel computation when cache_kernel=False to limit memory usage.
-        Memory per chunk: O(kernel_batch_size * n_train_samples) instead of O(n_test * n_train).
+        Uses only support vectors for prediction (memory efficient).
+        Uses chunked kernel computation for large test sets to limit memory usage.
 
         :param ArrayLike X: The input data
         :return np.ndarray: The predicted output
         """
         self._check_fitted()
 
-        X = np.asarray(X, dtype=float)
+        X = np.asarray(X, dtype=np.float32)
         if X.ndim != 2:
             raise SVRValidationError("X must be a 2D array")
         if X.shape[1] != self.n_features_in_:
@@ -987,22 +1039,464 @@ class SVR_(BaseEstimator, RegressorMixin):
 
         n_test = X.shape[0]
 
-        # If kernel is cached or test set is small, compute in one go
-        if self.cache_kernel or n_test <= self.kernel_batch_size:
-            K = self._compute_kernel_matrix(X, self.X_)
-            return K @ self.dual_coef_ + self.b_
+        # Handle edge case: no support vectors (return bias only)
+        if self._fitted_no_sv_:
+            return np.full(n_test, self.b_, dtype=np.float32)
 
-        # Chunked prediction to limit memory usage
-        # Memory per chunk: O(kernel_batch_size * n_train_samples)
-        batch_size = max(DHI_SVR_DEFAULT_KERNEL_BATCH_SIZE, self.kernel_batch_size)
-        predictions = np.empty(n_test, dtype=np.float64)
+        n_sv = len(self.support_vectors_)
+
+        batch_size = max(
+            DHI_SVR_MIN_CHUNK_BATCH_SIZE,
+            min(DHI_SVR_MAX_CHUNK_BATCH_SIZE, DHI_SVR_MAX_CHUNK_BYTES // (n_sv * 4)),
+        )
+
+        if n_test <= batch_size:
+            K = self._compute_kernel_matrix(X, self.support_vectors_)
+            return (K @ self.support_dual_coef_ + self.b_).astype(np.float32)
+
+        predictions = np.empty(n_test, dtype=np.float32)
 
         for start in range(0, n_test, batch_size):
             end = min(start + batch_size, n_test)
-            self.logger.debug(f"Predicting batch {start}:{end}")
-
-            # K_chunk shape: (chunk_size, n_train_samples)
-            K_chunk = self._compute_kernel_matrix(X[start:end], self.X_)
-            predictions[start:end] = K_chunk @ self.dual_coef_ + self.b_
+            K_chunk = self._compute_kernel_matrix(X[start:end], self.support_vectors_)
+            predictions[start:end] = (K_chunk @ self.support_dual_coef_ + self.b_).astype(np.float32)
 
         return predictions
+
+
+def plot_svr_predictions(
+    estimator,
+    X: ArrayLike,
+    y: ArrayLike,
+    *,
+    feature_indices: tuple[int, int] = (0, 1),
+    feature_names: Optional[tuple[str, str]] = None,
+    grid_resolution: int = 100,
+    colorscale: str = "RdYlBu_r",
+    opacity: float = 0.7,
+    show_training_data: bool = True,
+    support_vectors: bool = True,
+    max_sv_display: Optional[int] = None,
+    show_contours: bool = True,
+    n_contours: int = 10,
+    show_epsilon_tube: bool = False,
+    epsilon: Optional[float] = None,
+    title: Optional[str] = None,
+    show_colorbar: bool = True,
+    scatter_size: int = 10,
+    sv_size: int = 22,
+    width: int = 800,
+    height: int = 600,
+    show: bool = True,
+) -> go.Figure:
+    """
+    Plots the SVR prediction surface with support vectors for 2D visualization using Plotly.
+
+    Works with both sklearn.svm.SVR and custom SVR_ estimator.
+    For datasets with more than 2 features, specify which 2 features to use
+    for the visualization via `feature_indices`.
+
+    :param estimator: A fitted SVR model (sklearn SVR or custom SVR_).
+    :param ArrayLike X: Training data of shape (n_samples, n_features).
+    :param ArrayLike y: Target values of shape (n_samples,).
+    :param tuple[int, int] feature_indices: Indices of the two features to use for 2D visualization.
+    :param Optional[tuple[str, str]] feature_names: Names of the two features for axis labels.
+    :param int grid_resolution: Resolution of the prediction grid.
+    :param str colorscale: Plotly colorscale for the prediction surface.
+    :param float opacity: Transparency of the prediction surface (0-1).
+    :param bool show_training_data: Whether to show training data points.
+    :param bool support_vectors: Whether to highlight support vectors.
+    :param Optional[int] max_sv_display: Maximum number of support vectors to display. If None, shows all.
+        When limited, selects SVs with highest dual coefficient magnitude (most influential).
+    :param bool show_contours: Whether to show prediction contour lines (decision boundaries).
+    :param int n_contours: Number of contour lines to display when show_contours=True.
+    :param bool show_epsilon_tube: Whether to show epsilon-insensitive tube contours.
+    :param Optional[float] epsilon: Epsilon value for the tube. If None, tries to get from estimator.
+    :param Optional[str] title: Plot title. If None, auto-generates based on estimator.
+    :param bool show_colorbar: Whether to show colorbar.
+    :param int scatter_size: Size of data point markers.
+    :param int sv_size: Size of support vector markers.
+    :param int width: Figure width in pixels.
+    :param int height: Figure height in pixels.
+    :param bool show: Whether to display the figure immediately.
+    :return go.Figure: The Plotly figure object.
+    :raises ValueError: If X is not a 2D array or feature_indices are out of bounds.
+    """
+    X = np.asarray(X)
+    y = np.asarray(y).ravel()
+
+    if X.ndim != 2:
+        raise ValueError("X must be a 2D array")
+
+    _, n_features = X.shape
+    f1, f2 = feature_indices
+
+    if f1 >= n_features or f2 >= n_features:
+        raise ValueError(f"feature_indices ({f1}, {f2}) out of bounds for data with {n_features} features")
+
+    if feature_names is None:
+        x_label, y_label = f"Feature {f1}", f"Feature {f2}"
+    else:
+        x_label, y_label = feature_names
+
+    X_2d = X[:, [f1, f2]]
+
+    x_min, x_max = X_2d[:, 0].min() - 0.5, X_2d[:, 0].max() + 0.5
+    y_min, y_max = X_2d[:, 1].min() - 0.5, X_2d[:, 1].max() + 0.5
+
+    xx, yy = np.meshgrid(
+        np.linspace(x_min, x_max, grid_resolution),
+        np.linspace(y_min, y_max, grid_resolution),
+    )
+
+    if n_features > 2:
+        grid_points = np.zeros((xx.ravel().shape[0], n_features))
+        grid_points[:, f1] = xx.ravel()
+        grid_points[:, f2] = yy.ravel()
+        for i in range(n_features):
+            if i not in (f1, f2):
+                grid_points[:, i] = X[:, i].mean()
+    else:
+        grid_points = np.c_[xx.ravel(), yy.ravel()]
+
+    Z = estimator.predict(grid_points).reshape(xx.shape)
+
+    fig = go.Figure()
+
+    fig.add_trace(
+        go.Heatmap(
+            x=np.linspace(x_min, x_max, grid_resolution),
+            y=np.linspace(y_min, y_max, grid_resolution),
+            z=Z,
+            colorscale=colorscale,
+            opacity=opacity,
+            zmin=y.min(),
+            zmax=y.max(),
+            showscale=show_colorbar,
+            colorbar={"title": "Predicted Value"} if show_colorbar else None,
+            hovertemplate=f"{x_label}: %{{x:.3f}}<br>{y_label}: %{{y:.3f}}<br>Prediction: %{{z:.3f}}<extra></extra>",
+        )
+    )
+
+    if show_contours:
+        contour_step = (Z.max() - Z.min()) / (n_contours + 1)
+        fig.add_trace(
+            go.Contour(
+                x=np.linspace(x_min, x_max, grid_resolution),
+                y=np.linspace(y_min, y_max, grid_resolution),
+                z=Z,
+                contours={
+                    "start": float(Z.min() + contour_step),
+                    "end": float(Z.max() - contour_step),
+                    "size": float(contour_step),
+                    "showlabels": True,
+                    "labelfont": {"size": 9, "color": "black"},
+                },
+                line={"width": 1.5, "color": "black"},
+                showscale=False,
+                opacity=0.9,
+                hoverinfo="skip",
+                name="Contours",
+            )
+        )
+
+    if show_epsilon_tube:
+        eps = epsilon
+        if eps is None:
+            if hasattr(estimator, "epsilon_"):
+                eps = estimator.epsilon_
+            elif hasattr(estimator, "epsilon"):
+                eps = estimator.epsilon
+
+        if eps is not None and eps > 0:
+            z_mean = float(Z.mean())
+            fig.add_trace(
+                go.Contour(
+                    x=np.linspace(x_min, x_max, grid_resolution),
+                    y=np.linspace(y_min, y_max, grid_resolution),
+                    z=Z,
+                    contours={
+                        "start": z_mean - eps,
+                        "end": z_mean + eps,
+                        "size": eps,
+                        "showlabels": True,
+                        "labelfont": {"size": 10, "color": "black"},
+                    },
+                    line={"width": 2, "color": "darkred", "dash": "dash"},
+                    showscale=False,
+                    opacity=0.8,
+                    hoverinfo="skip",
+                    name="ε-tube",
+                )
+            )
+
+    if show_training_data:
+        fig.add_trace(
+            go.Scatter(
+                x=X_2d[:, 0],
+                y=X_2d[:, 1],
+                mode="markers",
+                marker={
+                    "size": scatter_size,
+                    "color": y,
+                    "colorscale": colorscale,
+                    "cmin": y.min(),
+                    "cmax": y.max(),
+                    "line": {"width": 1, "color": "black"},
+                    "showscale": False,
+                },
+                hovertemplate=f"{x_label}: %{{x:.3f}}<br>{y_label}: %{{y:.3f}}<br>Target: %{{marker.color:.3f}}<extra></extra>",
+                name="Training Data",
+            )
+        )
+
+    if support_vectors and hasattr(estimator, "support_vectors_"):
+        sv = estimator.support_vectors_
+        if sv is not None and len(sv) > 0:
+            n_total_sv = len(sv)
+            is_limited = max_sv_display is not None and n_total_sv > max_sv_display
+
+            all_sv_predictions = estimator.predict(sv)
+
+            if is_limited and max_sv_display is not None:
+                rng = np.random.default_rng(seed=42)
+                n_bins = max(n_contours, 5)
+                sv_per_bin = max(1, max_sv_display // n_bins)
+
+                pred_min, pred_max = all_sv_predictions.min(), all_sv_predictions.max()
+                bin_edges = np.linspace(pred_min, pred_max + 1e-9, n_bins + 1)
+                bin_indices = np.digitize(all_sv_predictions, bin_edges) - 1
+                bin_indices = np.clip(bin_indices, 0, n_bins - 1)
+
+                selected_indices = []
+                for bin_idx in range(n_bins):
+                    bin_mask = bin_indices == bin_idx
+                    bin_sv_indices = np.nonzero(bin_mask)[0]
+
+                    if len(bin_sv_indices) == 0:
+                        continue
+
+                    n_select = min(sv_per_bin, len(bin_sv_indices))
+
+                    if hasattr(estimator, "dual_coef_"):
+                        coef_magnitude = np.abs(estimator.dual_coef_).ravel()
+                        if len(coef_magnitude) == n_total_sv:
+                            bin_coefs = coef_magnitude[bin_sv_indices]
+                            top_in_bin = bin_sv_indices[np.argsort(bin_coefs)[-n_select:]]
+                            selected_indices.extend(top_in_bin)
+                        else:
+                            selected_indices.extend(rng.choice(bin_sv_indices, n_select, replace=False))
+                    else:
+                        selected_indices.extend(rng.choice(bin_sv_indices, n_select, replace=False))
+
+                selected_indices = np.array(selected_indices)
+                sv = sv[selected_indices]
+                sv_predictions = all_sv_predictions[selected_indices]
+            else:
+                sv_predictions = all_sv_predictions
+
+            if sv.shape[1] > 2:
+                sv_2d = sv[:, [f1, f2]]
+            else:
+                sv_2d = sv
+
+            sv_label = f"Support Vectors (n={len(sv)}"
+            if is_limited:
+                sv_label += f" of {n_total_sv}, stratified by prediction"
+            sv_label += ")"
+
+            fig.add_trace(
+                go.Scatter(
+                    x=sv_2d[:, 0],
+                    y=sv_2d[:, 1],
+                    mode="markers",
+                    marker={
+                        "size": sv_size,
+                        "symbol": "circle",
+                        "color": sv_predictions,
+                        "colorscale": colorscale,
+                        "cmin": y.min(),
+                        "cmax": y.max(),
+                        "line": {"width": 2.5, "color": "black"},
+                        "showscale": False,
+                    },
+                    hovertemplate=f"Support Vector<br>{x_label}: %{{x:.3f}}<br>{y_label}: %{{y:.3f}}<br>Prediction: %{{marker.color:.3f}}<extra></extra>",
+                    name=sv_label,
+                )
+            )
+
+    if title is None:
+        kernel = getattr(estimator, "kernel", "unknown")
+        title = f"{repr(estimator)} Predictions ({kernel} kernel)"
+
+    fig.update_layout(
+        title={"text": title, "x": 0.5, "xanchor": "center"},
+        xaxis={"title": x_label, "range": [x_min, x_max]},
+        yaxis={"title": y_label, "range": [y_min, y_max]},
+        width=width,
+        height=height,
+        legend={"yanchor": "top", "y": 0.99, "xanchor": "right", "x": 0.99},
+        hovermode="closest",
+    )
+
+    if show:
+        fig.show()
+
+    return fig
+
+
+def plot_compare_svr_models(
+    estimators: list[tuple[str, Any]],
+    X: ArrayLike,
+    y: ArrayLike,
+    *,
+    feature_indices: tuple[int, int] = (0, 1),
+    feature_names: Optional[tuple[str, str]] = None,
+    grid_resolution: int = 100,
+    width: int = 500,
+    height: int = 450,
+    show: bool = True,
+    **kwargs,
+) -> go.Figure:
+    """
+    Compares multiple SVR models side-by-side using Plotly subplots.
+
+    :param list[tuple[str, Any]] estimators: List of (name, fitted_estimator) tuples.
+    :param ArrayLike X: Training data of shape (n_samples, n_features).
+    :param ArrayLike y: Target values of shape (n_samples,).
+    :param tuple[int, int] feature_indices: Indices of the two features to use for 2D visualization.
+    :param Optional[tuple[str, str]] feature_names: Names of the two features for axis labels.
+    :param int grid_resolution: Resolution of the prediction grid.
+    :param int width: Width per subplot in pixels.
+    :param int height: Height of the figure in pixels.
+    :param bool show: Whether to display the figure immediately.
+    :param kwargs: Additional arguments (colorscale, opacity, scatter_size, sv_size, support_vectors).
+    :return go.Figure: The Plotly figure object with subplots.
+    """
+    n_models = len(estimators)
+
+    fig = make_subplots(
+        rows=1,
+        cols=n_models,
+        subplot_titles=[name for name, _ in estimators],
+        horizontal_spacing=0.08,
+    )
+
+    X = np.asarray(X)
+    y = np.asarray(y).ravel()
+
+    _, n_features = X.shape
+    f1, f2 = feature_indices
+
+    if feature_names is None:
+        x_label, y_label = f"Feature {f1}", f"Feature {f2}"
+    else:
+        x_label, y_label = feature_names
+
+    X_2d = X[:, [f1, f2]]
+
+    x_min, x_max = X_2d[:, 0].min() - 0.5, X_2d[:, 0].max() + 0.5
+    y_min, y_max = X_2d[:, 1].min() - 0.5, X_2d[:, 1].max() + 0.5
+
+    xx, yy = np.meshgrid(
+        np.linspace(x_min, x_max, grid_resolution),
+        np.linspace(y_min, y_max, grid_resolution),
+    )
+
+    if n_features > 2:
+        grid_points = np.zeros((xx.ravel().shape[0], n_features))
+        grid_points[:, f1] = xx.ravel()
+        grid_points[:, f2] = yy.ravel()
+        for i in range(n_features):
+            if i not in (f1, f2):
+                grid_points[:, i] = X[:, i].mean()
+    else:
+        grid_points = np.c_[xx.ravel(), yy.ravel()]
+
+    colorscale = kwargs.get("colorscale", "RdYlBu_r")
+    opacity = kwargs.get("opacity", 0.7)
+    scatter_size = kwargs.get("scatter_size", 10)
+    sv_size = kwargs.get("sv_size", 18)
+    show_support_vectors = kwargs.get("support_vectors", True)
+
+    for col_idx, (name, estimator) in enumerate(estimators, start=1):
+        Z = estimator.predict(grid_points).reshape(xx.shape)
+
+        fig.add_trace(
+            {
+                "type": "heatmap",
+                "x": np.linspace(x_min, x_max, grid_resolution).tolist(),
+                "y": np.linspace(y_min, y_max, grid_resolution).tolist(),
+                "z": Z.tolist(),
+                "colorscale": colorscale,
+                "opacity": opacity,
+                "zmin": float(y.min()),
+                "zmax": float(y.max()),
+                "showscale": col_idx == n_models,
+                "colorbar": {"title": "Predicted"} if col_idx == n_models else None,
+                "hovertemplate": f"{x_label}: %{{x:.3f}}<br>{y_label}: %{{y:.3f}}<br>Pred: %{{z:.3f}}<extra>{name}</extra>",
+            },
+            row=1,
+            col=col_idx,
+        )
+
+        fig.add_trace(
+            {
+                "type": "scatter",
+                "x": X_2d[:, 0].tolist(),
+                "y": X_2d[:, 1].tolist(),
+                "mode": "markers",
+                "marker": {
+                    "size": scatter_size,
+                    "color": y.tolist(),
+                    "colorscale": colorscale,
+                    "cmin": float(y.min()),
+                    "cmax": float(y.max()),
+                    "line": {"width": 0.5, "color": "black"},
+                    "showscale": False,
+                },
+                "hovertemplate": f"{x_label}: %{{x:.3f}}<br>{y_label}: %{{y:.3f}}<br>Target: %{{marker.color:.3f}}<extra>Data</extra>",
+                "name": "Data",
+                "showlegend": col_idx == 1,
+            },
+            row=1,
+            col=col_idx,
+        )
+
+        if show_support_vectors and hasattr(estimator, "support_vectors_"):
+            sv = estimator.support_vectors_
+            if sv is not None and len(sv) > 0:
+                sv_2d = sv[:, [f1, f2]] if sv.shape[1] > 2 else sv
+                fig.add_trace(
+                    {
+                        "type": "scatter",
+                        "x": sv_2d[:, 0].tolist(),
+                        "y": sv_2d[:, 1].tolist(),
+                        "mode": "markers",
+                        "marker": {
+                            "size": sv_size,
+                            "color": "rgba(0,0,0,0)",
+                            "line": {"width": 2, "color": "black"},
+                        },
+                        "hovertemplate": f"SV<br>{x_label}: %{{x:.3f}}<br>{y_label}: %{{y:.3f}}<extra>{name}</extra>",
+                        "name": f"SVs (n={len(sv)})",
+                        "showlegend": col_idx == 1,
+                    },
+                    row=1,
+                    col=col_idx,
+                )
+
+        fig.update_xaxes(title_text=x_label, range=[x_min, x_max], row=1, col=col_idx)
+        fig.update_yaxes(title_text=y_label if col_idx == 1 else "", range=[y_min, y_max], row=1, col=col_idx)
+
+    fig.update_layout(
+        width=width * n_models,
+        height=height,
+        title={"text": "SVR Model Comparison", "x": 0.5, "xanchor": "center"},
+        legend={"yanchor": "top", "y": 0.99, "xanchor": "right", "x": 0.99},
+    )
+
+    if show:
+        fig.show()
+
+    return fig

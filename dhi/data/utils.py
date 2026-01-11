@@ -68,7 +68,7 @@ def reduce_memory_usage(
     decrease_mem = (start_mem - end_mem) / start_mem * 100
     (
         reporter_debug(f"Decreased memory usage by {decrease_mem:.2f}%")
-        if np.isclose(decrease_mem, 0.0)
+        if decrease_mem < 80.0
         else reporter_info(f"Decreased memory usage by {decrease_mem:.2f}%")
     )
 

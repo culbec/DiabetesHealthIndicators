@@ -18,7 +18,7 @@ from typing import Any, Dict, List, Mapping, Optional, Set, cast
 
 import numpy as np
 import pandas as pd
-from joblib import Parallel, delayed
+from joblib import Parallel, delayed, parallel_config
 from numpy.typing import ArrayLike
 
 import dhi.constants as dconst
@@ -369,8 +369,8 @@ class GridSearchCVOptimizer:
         :param np.ndarray y: Target values as numpy array.
         :return CVParamSearchResult: With all evaluation data.
         """
-        self.logger.info("Evaluating candidate %d/%d parameters:", candidate_idx, total_candidates)
-        self.logger.info("Candidate parameters: %s", params)
+        self.logger.debug("Evaluating candidate %d/%d parameters:", candidate_idx, total_candidates)
+        self.logger.debug("Candidate parameters: %s", params)
 
         X_arr, y_arr = np.asarray(X), np.asarray(y)
 
@@ -384,7 +384,7 @@ class GridSearchCVOptimizer:
             tr = _as_index_array(train_idx)
             val = _as_index_array(val_idx)
 
-            self.logger.info(
+            self.logger.debug(
                 "Fold %d/%d: training on %d samples, validating on %d samples",
                 fold_idx,
                 self.n_splits,
@@ -393,7 +393,7 @@ class GridSearchCVOptimizer:
             )
 
             # Fit preprocessor on training data only to prevent data leakage
-            preprocessor = build_preprocessor(self._preprocessor_config)
+            preprocessor = build_preprocessor(self._preprocessor_config or {})
 
             X_tr = X.iloc[tr].copy()
             X_val = X.iloc[val].copy()
@@ -440,12 +440,12 @@ class GridSearchCVOptimizer:
             safe_metrics: Dict[str, float] = {k: float(v) for k, v in metrics.items() if v is not None}
             fold_metrics.append(safe_metrics)
 
-            self.logger.info(
+            self.logger.debug(
                 "Fold %d metrics: %s",
                 fold_idx,
                 json.dumps(safe_metrics, indent=2, sort_keys=True),
             )
-            self.logger.info("Fold %d %s score: %.6f", fold_idx, self.refit_metric_, score)
+            self.logger.debug("Fold %d %s score: %.6f", fold_idx, self.refit_metric_, score)
 
         # Compute comprehensive statistical analysis using the statistics module
         # This includes confidence intervals, normality testing, and descriptive stats
@@ -529,34 +529,41 @@ class GridSearchCVOptimizer:
         )
 
         # Parallel evaluation using joblib
+        # Use loky backend with mmap for arrays to avoid serialization overhead
+        # Our custom estimators hold the GIL, and cannot benefit from true parallelism from the 'threading' backend
+        # Loky backend and memory mapping provide efficient parallel evaluation for large arrays
+        # return_as="generator" processes results incrementally to reduce peak memory usage
         # n_jobs = -1 uses all available CPUs, n_jobs = 1 runs sequentially
         # verbose=10 provides per-task progress updates
         parallel_verbose = 10 if self.n_jobs != 1 else 0
-        results = cast(
-            List[CVParamSearchResult],
-            Parallel(n_jobs=self.n_jobs, verbose=parallel_verbose)(
-                delayed(self._evaluate_candidate)(params, idx, total_candidates, X, np.asarray(y))
+        with parallel_config(backend="loky"):
+            results_generator = Parallel(
+                n_jobs=self.n_jobs,
+                verbose=parallel_verbose,
+                mmap_mode="r",
+                return_as="generator",
+            )(
+                delayed(self._evaluate_candidate)(params, idx, total_candidates, X, y)
                 for idx, params in enumerate(candidates, start=1)
-            ),
-        )
-
-        # Collect results and identify best configuration
-        for idx, result in enumerate(results, start=1):
-            self.cv_results_.append(result)
-
-            self.logger.info(
-                "Candidate %d/%d: params=%s, mean_%s=%.6f +/- %.6f",
-                idx,
-                total_candidates,
-                result.params,
-                self.refit_metric_,
-                result.mean_score,
-                result.std_score,
             )
 
-            if self._is_better_score(result.mean_score, self.best_score_):
-                self.best_score_ = result.mean_score
-                self.best_params_ = dict(result.params)
+            # Process results incrementally as they complete (reduces peak memory)
+            for idx, result in enumerate(cast(List[CVParamSearchResult], results_generator), start=1):
+                self.cv_results_.append(result)
+
+                self.logger.debug(
+                    "Candidate %d/%d: params=%s, mean_%s=%.6f +/- %.6f",
+                    idx,
+                    total_candidates,
+                    result.params,
+                    self.refit_metric_,
+                    result.mean_score,
+                    result.std_score,
+                )
+
+                if self._is_better_score(result.mean_score, self.best_score_):
+                    self.best_score_ = result.mean_score
+                    self.best_params_ = dict(result.params)
 
         self.logger.info(
             "Grid Search completed. Best %s score: %.6f with parameters: %s",
@@ -566,7 +573,7 @@ class GridSearchCVOptimizer:
         )
 
         # Refit best model on full dataset
-        self.fitted_preprocessor_ = build_preprocessor(self._preprocessor_config)
+        self.fitted_preprocessor_ = build_preprocessor(self._preprocessor_config or {})
 
         X_arr = np.asarray(self.fitted_preprocessor_.fit_transform(X))
         y_arr = np.asarray(y)

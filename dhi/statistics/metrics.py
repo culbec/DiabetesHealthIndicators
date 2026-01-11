@@ -17,6 +17,9 @@ import numpy as np
 from numpy.typing import ArrayLike
 from scipy import stats
 
+# The Wilcoxon signed-rank test requires at least 5-6 samples for meaningful results
+MIN_SAMPLES_FOR_WILCOXON_TEST: int = 5
+
 
 @dataclass
 class DescriptiveStats:
@@ -206,7 +209,7 @@ class ModelComparisonResult:
         """
         Convert to dictionary, excluding wilcoxon_test when None.
 
-        Required because Wilcoxon test is not computed when n < 6 folds.
+        Required because Wilcoxon test is not computed when n < MIN_SAMPLES_FOR_WILCOXON_TEST folds.
         Also handles nested HypothesisTestResult that may have None fields.
         """
         result: Dict[str, Any] = {
@@ -504,9 +507,9 @@ def compare_models(
 
     # Wilcoxon signed-rank test: non-parametric alternative
     # Does not assume normality; based on ranks of absolute differences
-    # Requires at least 6 samples for meaningful results
+    # Requires at least 5-6 samples for meaningful results
     wilcoxon_result = None
-    if n >= 6:
+    if n >= MIN_SAMPLES_FOR_WILCOXON_TEST:
         try:
             diff = arr_a - arr_b
             # Wilcoxon requires non-zero differences to compute ranks
