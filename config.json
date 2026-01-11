@@ -163,7 +163,7 @@
                     "coef0": 0.0,
                     "tol": 1e-3,
                     "C": 1.0,
-                    "epsilon": 1e-1,
+                    "epsilon": "auto",
                     "max_iter": 10000
                 },
                 "cv_params": {

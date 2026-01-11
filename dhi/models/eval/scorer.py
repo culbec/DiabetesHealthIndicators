@@ -37,6 +37,7 @@ class Scorer:
         metrics = {
             "max_error": em.max_error(y_true, y_pred),
             "mean_absolute_error": em.mean_absolute_error(y_true, y_pred),
+            "mean_absolute_percentage_error": em.mean_absolute_percentage_error(y_true, y_pred),
             "mean_squared_error": em.mean_squared_error(y_true, y_pred),
             "median_absolute_error": em.median_absolute_error(y_true, y_pred),
             "root_mean_squared_error": em.root_mean_squared_error(y_true, y_pred),

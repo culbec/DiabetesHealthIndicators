@@ -71,15 +71,19 @@ def normalized_root_mean_squared_error(
     :return float: The normalized root mean squared error.
     """
     if normalization == "euclidean":
-        denom = np.sqrt(np.mean((y_true * y_true)), dtype=np.float64)
+        denom = np.linalg.norm(y_true)
     elif normalization == "min-max":
         denom = y_true.max() - y_true.min()
     elif normalization == "mean":
         denom = y_true.mean()
     else:
         raise ValueError(f"Invalid normalization method: {normalization}")
+    
+    denom = float(denom)
+    if abs(denom) < 1e-12:
+        return float("inf")
 
-    return float(root_mean_squared_error(y_true, y_pred) / denom) if denom > 0 else float("inf")
+    return float(root_mean_squared_error(y_true, y_pred) / denom)
 
 
 def mean_squared_log_error(y_true: np.ndarray, y_pred: np.ndarray) -> float:

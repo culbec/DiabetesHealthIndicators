@@ -318,6 +318,9 @@ class SVR_(BaseEstimator, RegressorMixin):
         :param y: Target values used to compute epsilon for "auto" mode.
         :return: The resolved epsilon value.
         """
+        if self.epsilon_ is not None:
+            return self.epsilon_
+        
         if isinstance(self.epsilon, (int, float)):
             return float(self.epsilon)
 
@@ -355,7 +358,7 @@ class SVR_(BaseEstimator, RegressorMixin):
 
                 def linear_kernel(x, y):
                     x, y = np.atleast_2d(x), np.atleast_2d(y)
-                    return x.T @ y
+                    return x @ y.T
 
                 self.logger.debug("Using a linear kernel")
                 return linear_kernel
@@ -368,7 +371,7 @@ class SVR_(BaseEstimator, RegressorMixin):
 
                 def poly_kernel(x, y):
                     x, y = np.atleast_2d(x), np.atleast_2d(y)
-                    base = gamma_ * (x.T @ y) + coef0_
+                    base = gamma_ * (x @ y.T) + coef0_
                     base = np.clip(base, -max_base, max_base)
                     return base**degree_
 
@@ -408,7 +411,7 @@ class SVR_(BaseEstimator, RegressorMixin):
 
                 def sigmoid_kernel(x, y):
                     x, y = np.atleast_2d(x), np.atleast_2d(y)
-                    return np.tanh(gamma_ * (x.T @ y) + coef0_)
+                    return np.tanh(gamma_ * (x @ y.T) + coef0_)
 
                 self.logger.debug(
                     f"Using a sigmoid kernel with the following parameters: gamma={self.gamma_}, coef0={self.coef0_}"
@@ -923,7 +926,7 @@ class SVR_(BaseEstimator, RegressorMixin):
         self.gamma_ = self._resolve_gamma(self.X_)
         self.logger.debug(f"Resolved gamma: {self.gamma_}")
 
-        self.epsilon_ = self._resolve_epsilon(y)
+        self.epsilon_ = float(self._resolve_epsilon(y)) or float(DHI_SVR_DEFAULT_EPSILON)
         self.logger.debug(f"Resolved epsilon: {self.epsilon_}")
 
         self.kernel_func_ = self._resolve_kernel_func()
@@ -1057,7 +1060,6 @@ class SVR_(BaseEstimator, RegressorMixin):
             end = min(start + batch_size, n_test)
             K_chunk = self._compute_kernel_matrix(X[start:end], self.support_vectors_)
             predictions[start:end] = (K_chunk @ self.support_dual_coef_ + self.b_).astype(np.float32)
-            del K_chunk
 
         return predictions
 
