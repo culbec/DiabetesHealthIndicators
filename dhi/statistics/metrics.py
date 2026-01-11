@@ -504,9 +504,9 @@ def compare_models(
 
     # Wilcoxon signed-rank test: non-parametric alternative
     # Does not assume normality; based on ranks of absolute differences
-    # Requires at least 2 samples for meaningful results
+    # Requires at least 6 samples for meaningful results
     wilcoxon_result = None
-    if n >= 2:
+    if n >= 6:
         try:
             diff = arr_a - arr_b
             # Wilcoxon requires non-zero differences to compute ranks

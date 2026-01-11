@@ -23,7 +23,7 @@ class ExperimentRunner:
     def __init__(self, model_config: Dict[str, Any], preprocessor_config: Dict[str, Any]) -> None:
         self._init_model(**model_config)
 
-        self._preprocessor = None
+        self._preprocessor = None # TODO: handle case where model is loaded from pretrained path and preprocessor may remain undefined and unfitted on training data
         self._preprocessor_config = preprocessor_config
 
     def _init_model(self, **kwargs) -> None:
@@ -233,7 +233,7 @@ class ExperimentRunner:
     @time_func
     def predict(self, X: ArrayLike) -> np.ndarray:
         if not self._is_fitted:
-            raise NotFittedError(f"Model {self._model_name} is not fitted yet. Call 'fit' before using the model'.")
+            raise NotFittedError(f"Model {self._model_name} is not fitted yet. Call 'fit' before using the model.")
 
         X_ = np.asarray(self._preprocessor.transform(X))
         return self._model.predict(X_)
@@ -241,7 +241,7 @@ class ExperimentRunner:
     @time_func
     def predict_proba(self, X: ArrayLike) -> Optional[np.ndarray]:
         if not self._is_fitted:
-            raise NotFittedError(f"Model {self._model_name} is not fitted yet. Call 'fit' before using the model'.")
+            raise NotFittedError(f"Model {self._model_name} is not fitted yet. Call 'fit' before using the model.")
 
         predict_proba = getattr(self._model, "predict_proba", None)
         if predict_proba is None or not callable(predict_proba):
