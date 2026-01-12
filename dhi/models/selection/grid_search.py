@@ -457,39 +457,6 @@ class GridSearchCVOptimizer:
             mean_score = float("-inf")
             std_score = 0.0
 
-        # Output progress: use print for parallel workers (logger not visible)
-        if self.n_jobs != 1:
-            params_str = ", ".join(f"{k}={v}" for k, v in params.items())
-            ci_str = ""
-            if cv_statistics is not None:
-                ci = cv_statistics.confidence_interval
-                ci_str = f", 95% CI: [{ci.lower:.6f}, {ci.upper:.6f}]"
-            print(
-                f"  [Candidate {candidate_idx}/{total_candidates}]"
-                f": {self.refit_metric_}={mean_score:.6f} +/- {std_score:.6f}{ci_str}\nparams=({params_str})"
-            )
-        else:
-            self.logger.info(
-                "Candidate %d mean %s score: %.6f +/- %.6f",
-                candidate_idx,
-                self.refit_metric_,
-                mean_score,
-                std_score,
-            )
-            if cv_statistics is not None:
-                ci = cv_statistics.confidence_interval
-                self.logger.info(
-                    "Candidate %d/%d  %s=%0.6f +/- %0.6f, 95%% CI: [%.6f, %.6f]\nparams=%s",
-                    candidate_idx,
-                    total_candidates,
-                    self.refit_metric_,
-                    mean_score,
-                    std_score,
-                    ci.lower,
-                    ci.upper,
-                    params,
-                )
-
         return CVParamSearchResult(
             params=params,
             fold_scores=fold_scores,
@@ -547,17 +514,26 @@ class GridSearchCVOptimizer:
             )
 
             # Process results incrementally as they complete (reduces peak memory)
+            # Progress logging is done here in the parent process for cross-platform compatibility
+            # (worker process stdout/stderr is not captured on Windows with loky backend)
             for idx, result in enumerate(cast(List[CVParamSearchResult], results_generator), start=1):
                 self.cv_results_.append(result)
 
-                self.logger.debug(
-                    "Candidate %d/%d: params=%s, mean_%s=%.6f +/- %.6f",
+                params_str = ", ".join(f"{k}={v}" for k, v in result.params.items())
+                ci_str = ""
+                if result.statistics is not None:
+                    ci = result.statistics.confidence_interval
+                    ci_str = f", 95% CI: [{ci.lower:.6f}, {ci.upper:.6f}]"
+
+                self.logger.info(
+                    "Candidate %d/%d: %s=%.6f +/- %.6f%s\n  params=(%s)",
                     idx,
                     total_candidates,
-                    result.params,
                     self.refit_metric_,
                     result.mean_score,
                     result.std_score,
+                    ci_str,
+                    params_str,
                 )
 
                 if self._is_better_score(result.mean_score, self.best_score_):

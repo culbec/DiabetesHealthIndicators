@@ -7,7 +7,7 @@
 
 ### Models
 
-.models/*
+.models/**/*.pkl
 
 #### Python ignores
 

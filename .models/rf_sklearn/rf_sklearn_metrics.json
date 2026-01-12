@@ -1,0 +1,22 @@
+{
+    "accuracy": 0.8,
+    "f1": 0.8333333333333333,
+    "f1_micro": null,
+    "f1_macro": null,
+    "f1_weighted": null,
+    "precision": 1.0,
+    "precision_micro": null,
+    "precision_macro": null,
+    "precision_weighted": null,
+    "recall": 0.7142857142857143,
+    "recall_micro": null,
+    "recall_macro": null,
+    "recall_weighted": null,
+    "fbeta": 0.8333333333333333,
+    "fbeta_micro": null,
+    "fbeta_macro": null,
+    "fbeta_weighted": null,
+    "log_loss": 0.512000650096463,
+    "roc_auc": 0.8214285714285714,
+    "average_precision": 0.9355501309835674
+}
