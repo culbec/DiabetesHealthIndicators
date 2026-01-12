@@ -23,6 +23,7 @@ dependencies = [
     "shap (>=0.50.0,<0.51.0)",
     "matplotlib (>=3.10.8,<4.0.0)",
     "scipy-stubs (>=1.16.3,<1.17.0)",
+    "kaleido (>=1.2.0,<2.0.0)",
 ]
 
 [tool.poetry]

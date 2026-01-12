@@ -22,16 +22,15 @@ from joblib import Parallel, delayed, parallel_config
 from numpy.typing import ArrayLike
 
 import dhi.constants as dconst
-
-from dhi.utils import get_logger
+from dhi.data.factory import build_preprocessor
+from dhi.data.preprocessing._base import DataPreprocessor
 from dhi.models.eval.scorer import Scorer
 from dhi.models.selection.cross_validation import (
     KFoldCVSplitter,
     StratifiedKFoldCVSplitter,
 )
-from dhi.data.factory import build_preprocessor
-from dhi.data.preprocessing._base import DataPreprocessor
 from dhi.statistics.metrics import CVFoldStatistics, analyze_cv_fold_scores
+from dhi.utils import get_logger
 
 # Mapping of common metric aliases to their canonical names
 METRIC_ALIAS_MAP: Mapping[str, str] = {

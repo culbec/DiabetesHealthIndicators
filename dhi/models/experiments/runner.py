@@ -6,24 +6,22 @@ from typing import Any, Dict, Mapping, Optional
 import joblib
 import numpy as np
 import pandas as pd
-
 from numpy.typing import ArrayLike
 from sklearn.exceptions import NotFittedError
 
 import dhi.constants as dconst
-from dhi.decorators import time_func
 from dhi.data.factory import build_preprocessor
-from dhi.utils import get_logger, validate_param_grid
-
+from dhi.decorators import time_func
 from dhi.models.eval.scorer import Scorer
 from dhi.models.selection.grid_search import GridSearchCVOptimizer
+from dhi.utils import get_logger, validate_param_grid
 
 
 class ExperimentRunner:
     def __init__(self, model_config: Dict[str, Any], preprocessor_config: Dict[str, Any]) -> None:
         self._init_model(**model_config)
 
-        self._preprocessor = None # TODO: handle case where model is loaded from pretrained path and preprocessor may remain undefined and unfitted on training data
+        self._preprocessor = None  # TODO: handle case where model is loaded from pretrained path and preprocessor may remain undefined and unfitted on training data
         self._preprocessor_config = preprocessor_config
 
     def _init_model(self, **kwargs) -> None:
@@ -104,6 +102,10 @@ class ExperimentRunner:
     def model(self) -> dconst.ModelType:
         return self._model
 
+    @property
+    def save_path(self) -> Optional[pathlib.Path]:
+        return self._save_path
+
     @time_func
     def _save_model(self) -> None:
         if not self._save_path:
@@ -134,8 +136,19 @@ class ExperimentRunner:
 
     @time_func
     def score(self, X: ArrayLike, y: ArrayLike) -> Mapping[str, Optional[float]]:
-        y_true = np.asarray(y).ravel()
+        y_true = np.asarray(y, dtype=np.float64).ravel()
         y_pred, y_proba = self.predict(X), self.predict_proba(X)
+        y_pred = np.asarray(y_pred, dtype=np.float64)
+
+        # Diagnostic: compare prediction vs target statistics
+        self.logger.info(
+            f"Test targets: min={y_true.min():.4f}, max={y_true.max():.4f}, "
+            f"mean={y_true.mean():.4f}, std={y_true.std():.4f}"
+        )
+        self.logger.info(
+            f"Test predictions: min={y_pred.min():.4f}, max={y_pred.max():.4f}, "
+            f"mean={y_pred.mean():.4f}, std={y_pred.std():.4f}"
+        )
 
         scorer = Scorer(self._model, self._task_type)
         try:
@@ -175,7 +188,6 @@ class ExperimentRunner:
             raise TypeError(
                 "Input data X must be a pandas DataFrame for preprocessing"
             )  # Enforcing DataFrame type for now for preprocessing consistency
-
 
         y = np.asarray(y).ravel()
 
@@ -237,7 +249,7 @@ class ExperimentRunner:
     def predict(self, X: ArrayLike) -> np.ndarray:
         if not self._is_fitted:
             raise NotFittedError(f"Model {self._model_name} is not fitted yet. Call 'fit' before using the model.")
-        
+
         if self._preprocessor is None:
             raise RuntimeError("Preprocessor is not fitted yet. Call 'fit' before using the model.")
 
@@ -260,7 +272,7 @@ class ExperimentRunner:
                 f"Model {self._model_name} is not compatible with expected method 'predict_proba'. Unable to perform prediction."
             )
             return None
-        
+
         if self._preprocessor is None:
             raise RuntimeError("Preprocessor is not fitted yet. Call 'fit' before using the model.")
 
