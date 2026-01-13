@@ -444,7 +444,7 @@ class GridSearchCVOptimizer:
                 fold_idx,
                 json.dumps(safe_metrics, indent=2, sort_keys=True),
             )
-            self.logger.debug("Fold %d %s score: %.6f", fold_idx, self.refit_metric_, score)
+            self.logger.debug("Fold %d %s score: %.9f", fold_idx, self.refit_metric_, score)
 
         # Compute comprehensive statistical analysis using the statistics module
         # This includes confidence intervals, normality testing, and descriptive stats
@@ -523,10 +523,10 @@ class GridSearchCVOptimizer:
                 ci_str = ""
                 if result.statistics is not None:
                     ci = result.statistics.confidence_interval
-                    ci_str = f", 95% CI: [{ci.lower:.6f}, {ci.upper:.6f}]"
+                    ci_str = f", 95% CI: [{ci.lower:.9f}, {ci.upper:.9f}]"
 
                 self.logger.info(
-                    "Candidate %d/%d: %s=%.6f +/- %.6f%s\n  params=(%s)",
+                    "Candidate %d/%d: %s=%.9f +/- %.9f%s\n  params=(%s)",
                     idx,
                     total_candidates,
                     self.refit_metric_,
@@ -541,7 +541,7 @@ class GridSearchCVOptimizer:
                     self.best_params_ = dict(result.params)
 
         self.logger.info(
-            "Grid Search completed. Best %s score: %.6f with parameters: %s",
+            "Grid Search completed. Best %s score: %.9f with parameters: %s",
             self.refit_metric_,
             self.best_score_,
             self.best_params_,

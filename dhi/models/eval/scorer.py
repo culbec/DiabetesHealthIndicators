@@ -32,7 +32,8 @@ class Scorer:
         :param ArrayLike y_pred: The predicted labels.
         :return Mapping[str, Optional[float]]: Dictionary containing all regression metrics.
         """
-        y_true, y_pred = np.asarray(y_true), np.asarray(y_pred)
+        # Cast to float64 to prevent overflow in variance/std calculations
+        y_true, y_pred = np.asarray(y_true, dtype=np.float64), np.asarray(y_pred, dtype=np.float64)
 
         metrics = {
             "max_error": em.max_error(y_true, y_pred),
@@ -71,10 +72,11 @@ class Scorer:
         is_multi_class = len(np.unique(y_true)) > 2
         beta = max(beta, 0.0)
 
+        # Cast to float64 to prevent overflow in metric calculations
         y_true, y_pred, y_proba = (
-            np.asarray(y_true),
-            np.asarray(y_pred),
-            np.asarray(y_proba) if y_proba is not None else None,
+            np.asarray(y_true, dtype=np.float64),
+            np.asarray(y_pred, dtype=np.float64),
+            np.asarray(y_proba, dtype=np.float64) if y_proba is not None else None,
         )
 
         metrics = {

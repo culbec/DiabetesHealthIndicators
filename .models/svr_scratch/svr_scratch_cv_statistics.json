@@ -1,0 +1,44 @@
+{
+    "refit_metric": "root_mean_squared_error",
+    "best_params": {
+        "kernel": "rbf",
+        "C": 1.0,
+        "epsilon": "auto",
+        "gamma": "scale"
+    },
+    "best_statistics": {
+        "fold_scores": [
+            5.035965855128008,
+            4.370107184819885,
+            4.460083987995617,
+            4.64609032493379,
+            2.912629267821118
+        ],
+        "descriptive": {
+            "mean": 4.284975324139683,
+            "std": 0.8086462449034894,
+            "std_error": 0.361637594670829,
+            "median": 4.460083987995617,
+            "min": 2.912629267821118,
+            "max": 5.035965855128008,
+            "iqr": 0.27598314011390546,
+            "q1": 4.370107184819885,
+            "q3": 4.64609032493379,
+            "coefficient_of_variation": 18.87166631620791,
+            "n_samples": 5
+        },
+        "confidence_interval": {
+            "lower": 3.2809083945603543,
+            "upper": 5.289042253719012,
+            "confidence_level": 0.95,
+            "point_estimate": 4.284975324139683,
+            "margin_of_error": 1.0040669295793287
+        },
+        "normality_test": {
+            "statistic": 0.8350104103022764,
+            "p_value": 0.15159534171078953,
+            "is_normal": true,
+            "alpha": 0.05
+        }
+    }
+}

@@ -26,6 +26,10 @@ DHI_SVR_DEFAULT_DEGREE: int = 3
 DHI_SVR_DEFAULT_COEF0: float | None = None
 DHI_SVR_DEFAULT_SHRINKING: bool = True
 DHI_SVR_DEFAULT_SHRINKING_INTERVAL: int = 50
+DHI_SVR_SHRINK_GRAD_MARGIN_MULTIPLIER: float = 10.0  # Multiplier for gradient margin in shrinking
+DHI_SVR_MAX_UNSHRINK_CYCLES: int = 10  # Max consecutive unshrink cycles before stall detection
+DHI_SVR_EARLY_STOP_WINDOW: int = 10  # Number of unshrink cycles to track for early stopping
+DHI_SVR_EARLY_STOP_MIN_IMPROVEMENT: float = 0.05  # Min window variation to continue (5%)
 DHI_SVR_DEFAULT_KERNEL_BATCH_SIZE: int = 5000
 # Auto-disable kernel caching above this sample count to prevent OOM
 DHI_SVR_MAX_SAMPLES_FOR_CACHE: int = 15000
@@ -603,10 +607,32 @@ class SVR_(BaseEstimator, RegressorMixin):
 
         max_viol = float(np.max(viol))
         if max_viol <= self.tol:
-            self.logger.debug(f"KKT conditions satisfied (max violation {max_viol:.6f} <= tol {self.tol:.6f})")
+            # Only log if this is likely the final convergence (all variables active)
+            if self.shrinking and (self.active_set_ is not None) and (not bool(np.all(self.active_set_))):
+                self.logger.debug(f"Active set converged (max violation {max_viol:.9f}), will unshrink and recheck")
+            else:
+                self.logger.debug(f"KKT conditions satisfied (max violation {max_viol:.9f} <= tol {self.tol:.9f})")
             return None
 
         return int(np.argmax(viol))
+
+    def _compute_max_kkt_violation(self) -> float:
+        """
+        Computes the maximum KKT violation across all variables.
+
+        Only considers actual violations (variables that can move in the violating direction).
+        """
+        alpha = self.a_
+        gradient = self.phi_cache_
+
+        mask_low = alpha < (self.C - np.finfo(float).eps)
+        mask_high = alpha > np.finfo(float).eps
+
+        viol_increase = np.where(mask_low, np.maximum(0.0, gradient), 0.0)
+        viol_decrease = np.where(mask_high, np.maximum(0.0, -gradient), 0.0)
+        viol = np.maximum(viol_increase, viol_decrease)
+
+        return float(np.max(viol))
 
     def _apply_shrinking(self) -> None:
         """
@@ -616,12 +642,16 @@ class SVR_(BaseEstimator, RegressorMixin):
         is pushing it deeper into that bound (not causing a KKT violation):
           - alpha near 0 and gradient <= 0
           - alpha near C and gradient >= 0
+
+        Uses a gradient margin to avoid premature shrinking that leads to excessive un-shrinking.
         """
         if (not self.shrinking) or (self.active_set_ is None):
             self.logger.debug("Shrinking is not enabled or the active set is None")
             return
 
         bound_eps = max(float(self.tol), float(np.finfo(float).eps))
+        # Require gradient to be sufficiently negative/positive to shrink
+        grad_margin = self.tol * DHI_SVR_SHRINK_GRAD_MARGIN_MULTIPLIER
 
         for i in range(2 * self.n_samples_):
             if not bool(self.active_set_[i]):
@@ -630,7 +660,10 @@ class SVR_(BaseEstimator, RegressorMixin):
             alpha = float(self.a_[i])
             gradient = float(self.phi_cache_[i])
 
-            if (alpha <= bound_eps and gradient <= 0.0) or (alpha >= float(self.C) - bound_eps and gradient >= 0.0):
+            # Only shrink if gradient strongly pushes into bound (more conservative)
+            if (alpha <= bound_eps and gradient <= -grad_margin) or (
+                alpha >= float(self.C) - bound_eps and gradient >= grad_margin
+            ):
                 self.active_set_[i] = False
 
     def _select_second_index(self, idx: int) -> int | None:
@@ -796,6 +829,13 @@ class SVR_(BaseEstimator, RegressorMixin):
         # to prevent infinite loops on the same index
         failed_indices: set[int] = set()
 
+        # Track un-shrinking cycles for stall detection
+        unshrink_count = 0
+        last_unshrink_iter = 0
+
+        # Early stopping: track max violations after unshrinking
+        unshrink_violations: list[float] = []
+
         self.phi_cache_ = self._compute_phi_cache()
 
         if self.shrinking:
@@ -804,9 +844,14 @@ class SVR_(BaseEstimator, RegressorMixin):
             self.active_set_ = None
 
         while passes < self.max_passes and iters < self.max_iter:
-            if iters > 0 and iters % 1000 == 0:
-                self.logger.debug(f"SMO algorithm iteration {iters}, ok steps: {ok_steps}, fail steps: {fail_steps}")
-            
+            if iters > 0 and iters % 2500 == 0:
+                recent_viols = unshrink_violations[-DHI_SVR_EARLY_STOP_WINDOW:] if unshrink_violations else []
+                self.logger.info(
+                    f"SMO algorithm iteration {iters}, ok steps: {ok_steps}, fail steps: {fail_steps}"
+                    f", unshrink count: {unshrink_count}, last unshrink iter: {last_unshrink_iter}"
+                    f", recent max violations: {[f'{v:.9f}' for v in recent_viols]}"
+                )
+
             # Unshrink near iteration limit to catch late violations
             if self.shrinking and (self.active_set_ is not None) and (self.max_iter - iters <= shrinking_interval):
                 self.active_set_[:] = True
@@ -818,9 +863,41 @@ class SVR_(BaseEstimator, RegressorMixin):
             if i is None:
                 # Before declaring convergence, unshrink and re-check all variables
                 if self.shrinking and (self.active_set_ is not None) and (not bool(np.all(self.active_set_))):
+                    # Track consecutive unshrink cycles
+                    if iters - last_unshrink_iter < shrinking_interval:
+                        unshrink_count += 1
+                        if unshrink_count >= DHI_SVR_MAX_UNSHRINK_CYCLES:
+                            self.logger.info(
+                                f"Stall detected: {unshrink_count} consecutive unshrink cycles, terminating"
+                            )
+                            break
+                    else:
+                        unshrink_count = 0
+                    last_unshrink_iter = iters
+
                     self.active_set_[:] = True
                     failed_indices.clear()
                     self.phi_cache_ = self._compute_phi_cache()
+
+                    # Early stopping: track actual KKT violation after unshrinking
+                    current_max_viol = self._compute_max_kkt_violation()
+                    unshrink_violations.append(current_max_viol)
+
+                    # Check if violations have stagnated (small window variation)
+                    if len(unshrink_violations) >= DHI_SVR_EARLY_STOP_WINDOW:
+                        window = unshrink_violations[-DHI_SVR_EARLY_STOP_WINDOW:]
+                        best_in_window = min(window)
+                        worst_in_window = max(window)
+                        window_range = worst_in_window - best_in_window
+                        relative_range = window_range / (worst_in_window + 1e-12)
+
+                        if relative_range < DHI_SVR_EARLY_STOP_MIN_IMPROVEMENT:
+                            self.logger.info(
+                                f"Early stopping: window range {best_in_window:.9f} to {worst_in_window:.9f} "
+                                f"(variation {relative_range:.2%} < {DHI_SVR_EARLY_STOP_MIN_IMPROVEMENT:.0%} threshold)"
+                            )
+                            break
+
                     continue
 
                 self.logger.info("No optimizable KKT violations found, algorithm converged")
@@ -882,9 +959,9 @@ class SVR_(BaseEstimator, RegressorMixin):
         alpha_sum = float(np.sum(self.a_[: self.n_samples_]))
         alpha_star_sum = float(np.sum(self.a_[self.n_samples_ :]))
         self.logger.debug(
-            f"SMO state: bias={self.b_:.6f}, max_kkt_viol={max_kkt_viol:.6f}, "
-            f"sum(alpha)={alpha_sum:.6f}, sum(alpha*)={alpha_star_sum:.6f}, "
-            f"constraint violation={abs(alpha_sum - alpha_star_sum):.6f}"
+            f"SMO state: bias={self.b_:.9f}, max_kkt_viol={max_kkt_viol:.9f}, "
+            f"sum(alpha)={alpha_sum:.9f}, sum(alpha*)={alpha_star_sum:.9f}, "
+            f"constraint violation={abs(alpha_sum - alpha_star_sum):.9f}"
         )
 
         # Free SMO working arrays before final error computation to reduce memory pressure
