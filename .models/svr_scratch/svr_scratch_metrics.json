@@ -9,8 +9,5 @@
     "r2": 0.8928436968969515,
     "explained_variance": 0.9096557140034153,
     "mean_squared_log_error": 0.012509792103891866,
-    "root_mean_squared_log_error": 0.1118471819219951,
-    "debug_training": {
-        
-    }
+    "root_mean_squared_log_error": 0.1118471819219951
 }
