@@ -22,16 +22,15 @@ from joblib import Parallel, delayed, parallel_config
 from numpy.typing import ArrayLike
 
 import dhi.constants as dconst
-
-from dhi.utils import get_logger
+from dhi.data.factory import build_preprocessor
+from dhi.data.preprocessing._base import DataPreprocessor
 from dhi.models.eval.scorer import Scorer
 from dhi.models.selection.cross_validation import (
     KFoldCVSplitter,
     StratifiedKFoldCVSplitter,
 )
-from dhi.data.factory import build_preprocessor
-from dhi.data.preprocessing._base import DataPreprocessor
 from dhi.statistics.metrics import CVFoldStatistics, analyze_cv_fold_scores
+from dhi.utils import get_logger
 
 # Mapping of common metric aliases to their canonical names
 METRIC_ALIAS_MAP: Mapping[str, str] = {
@@ -445,7 +444,7 @@ class GridSearchCVOptimizer:
                 fold_idx,
                 json.dumps(safe_metrics, indent=2, sort_keys=True),
             )
-            self.logger.debug("Fold %d %s score: %.6f", fold_idx, self.refit_metric_, score)
+            self.logger.debug("Fold %d %s score: %.9f", fold_idx, self.refit_metric_, score)
 
         # Compute comprehensive statistical analysis using the statistics module
         # This includes confidence intervals, normality testing, and descriptive stats
@@ -457,39 +456,6 @@ class GridSearchCVOptimizer:
             cv_statistics = None
             mean_score = float("-inf")
             std_score = 0.0
-
-        # Output progress: use print for parallel workers (logger not visible)
-        if self.n_jobs != 1:
-            params_str = ", ".join(f"{k}={v}" for k, v in params.items())
-            ci_str = ""
-            if cv_statistics is not None:
-                ci = cv_statistics.confidence_interval
-                ci_str = f", 95% CI: [{ci.lower:.6f}, {ci.upper:.6f}]"
-            print(
-                f"  [Candidate {candidate_idx}/{total_candidates}]"
-                f": {self.refit_metric_}={mean_score:.6f} +/- {std_score:.6f}{ci_str}\nparams=({params_str})"
-            )
-        else:
-            self.logger.info(
-                "Candidate %d mean %s score: %.6f +/- %.6f",
-                candidate_idx,
-                self.refit_metric_,
-                mean_score,
-                std_score,
-            )
-            if cv_statistics is not None:
-                ci = cv_statistics.confidence_interval
-                self.logger.info(
-                    "Candidate %d/%d  %s=%0.6f +/- %0.6f, 95%% CI: [%.6f, %.6f]\nparams=%s",
-                    candidate_idx,
-                    total_candidates,
-                    self.refit_metric_,
-                    mean_score,
-                    std_score,
-                    ci.lower,
-                    ci.upper,
-                    params,
-                )
 
         return CVParamSearchResult(
             params=params,
@@ -548,17 +514,26 @@ class GridSearchCVOptimizer:
             )
 
             # Process results incrementally as they complete (reduces peak memory)
+            # Progress logging is done here in the parent process for cross-platform compatibility
+            # (worker process stdout/stderr is not captured on Windows with loky backend)
             for idx, result in enumerate(cast(List[CVParamSearchResult], results_generator), start=1):
                 self.cv_results_.append(result)
 
-                self.logger.debug(
-                    "Candidate %d/%d: params=%s, mean_%s=%.6f +/- %.6f",
+                params_str = ", ".join(f"{k}={v}" for k, v in result.params.items())
+                ci_str = ""
+                if result.statistics is not None:
+                    ci = result.statistics.confidence_interval
+                    ci_str = f", 95% CI: [{ci.lower:.9f}, {ci.upper:.9f}]"
+
+                self.logger.info(
+                    "Candidate %d/%d: %s=%.9f +/- %.9f%s\n  params=(%s)",
                     idx,
                     total_candidates,
-                    result.params,
                     self.refit_metric_,
                     result.mean_score,
                     result.std_score,
+                    ci_str,
+                    params_str,
                 )
 
                 if self._is_better_score(result.mean_score, self.best_score_):
@@ -566,7 +541,7 @@ class GridSearchCVOptimizer:
                     self.best_params_ = dict(result.params)
 
         self.logger.info(
-            "Grid Search completed. Best %s score: %.6f with parameters: %s",
+            "Grid Search completed. Best %s score: %.9f with parameters: %s",
             self.refit_metric_,
             self.best_score_,
             self.best_params_,

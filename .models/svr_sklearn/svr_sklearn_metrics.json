@@ -1,0 +1,13 @@
+{
+    "max_error": 12.661667278499067,
+    "mean_absolute_error": 2.1528736347960833,
+    "mean_absolute_percentage_error": 7.862774600900808,
+    "mean_squared_error": 7.303286431743864,
+    "median_absolute_error": 1.8119321932840933,
+    "root_mean_squared_error": 2.7024593302663895,
+    "normalized_root_mean_squared_error": 0.0892325436964829,
+    "r2": 0.911844372393659,
+    "explained_variance": 0.9118763127630775,
+    "mean_squared_log_error": 0.009594855240507788,
+    "root_mean_squared_log_error": 0.09795333195204638
+}
