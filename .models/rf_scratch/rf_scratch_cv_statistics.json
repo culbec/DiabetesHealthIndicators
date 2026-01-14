@@ -1,0 +1,47 @@
+{
+    "refit_metric": "f1",
+    "best_params": {
+        "n_trees": 50,
+        "max_depth": 15,
+        "min_samples_split": 5,
+        "min_samples_leaf": 5,
+        "vote": "soft",
+        "impurity_metric": "entropy",
+        "threshold": 0.6
+    },
+    "best_statistics": {
+        "fold_scores": [
+            0.9199463327370305,
+            0.9143949187791579,
+            0.9189431258396775,
+            0.914763481286123,
+            0.9190308320743104
+        ],
+        "descriptive": {
+            "mean": 0.9174157381432598,
+            "std": 0.002622268419044312,
+            "std_error": 0.0011727140880467971,
+            "median": 0.9189431258396775,
+            "min": 0.9143949187791579,
+            "max": 0.9199463327370305,
+            "iqr": 0.004267350788187407,
+            "q1": 0.914763481286123,
+            "q3": 0.9190308320743104,
+            "coefficient_of_variation": 0.2858320726382426,
+            "n_samples": 5
+        },
+        "confidence_interval": {
+            "lower": 0.9141597618537058,
+            "upper": 0.9206717144328138,
+            "confidence_level": 0.95,
+            "point_estimate": 0.9174157381432598,
+            "margin_of_error": 0.0032559762895540303
+        },
+        "normality_test": {
+            "statistic": 0.8098532249863065,
+            "p_value": 0.09725588048370395,
+            "is_normal": true,
+            "alpha": 0.05
+        }
+    }
+}
