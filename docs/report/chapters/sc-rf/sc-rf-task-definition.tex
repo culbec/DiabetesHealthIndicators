@@ -1,0 +1,18 @@
+\subsection{Problem specification}
+\label{rf-task}
+
+\par The target variable of this task is categorical, representing two possible outcomes, in the form of discrete values: \textit{diabetic} patient (positive class), or \textit{non-diabetic} patient (negative class). The model is therefore expected to predict a binary value $\{0, 1\}$, corresponding to the two output classes, alongside an associated probability score expressing the model's confidence.
+
+\subsection{Learning Task}
+\begin{itemize}
+    \item \textbf{Task (T)}: Predict if a patient is diabetic or non-diabetic.
+    \item \textbf{Performance (P)}: Model's capability of correctly predicting the health status of a patient. Can be expressed as accuracy, precision, recall, F1-score, or AUC-ROC.
+    \item \textbf{Experience (E)}: A set of labeled training examples, representing pairs of health indicators and the correct diabetes diagnosis. The model learns from these examples to generalize predictions on unseen data.
+\end{itemize}
+
+% \subsection{Learning Task}
+% \begin{itemize}
+%     \item \textbf{Task (T)}: Predict if a patient is diabetic or non-diabetic. Formally expressed as learning a mapping function $f: X \rightarrow Y$ that predicts whether a person has diabetes ($Y = 1$) or not ($Y = 0$) based on their health-related indicators ($X$).
+%     \item \textbf{Performance}: Model's capability of correctly predicting the health status of a patient is evaluated using metrics suitable for binary classification: accuracy, precision, recall, F1-score, and AUC-ROC.
+%     \item \textbf{Experience}: Consists of the labeled dataset training examples, representing tuples of the form $(x_i,y_i$), where $x_i$ is the vector of health-related indicators and $y_i$ is the diabetes label. The model learns from these examples to generalize predictions on unseen data.
+% \end{itemize}

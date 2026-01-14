@@ -1,0 +1,54 @@
+\documentclass[a4paper, 11pt]{article}
+\usepackage{geometry}
+\usepackage{url}
+\usepackage{color}
+\usepackage{xcolor}
+\usepackage{amsmath}
+\usepackage{amsfonts}
+\usepackage{amssymb}
+\usepackage{graphicx}
+\usepackage{verbatim}
+\usepackage{combelow}
+\usepackage[unicode]{hyperref}
+\hypersetup{
+  colorlinks=false,          % boxes instead of colored text
+  pdfborder={0 0 1},         % box thickness (0 0 1 = thin box)
+  citebordercolor=green,     % green boxes for citations
+  linkbordercolor=red,       % boxes for \ref, \eqref, etc. (set to white if you don't want them)
+  urlbordercolor=blue
+}
+\usepackage{float}
+\usepackage{url}
+\usepackage{indentfirst}
+\usepackage{booktabs}
+\usepackage{comment}
+\usepackage{cite}
+\usepackage{algorithm}
+\usepackage{algorithmicx}
+\usepackage{caption}
+\usepackage{algpseudocode}
+
+\algrenewcommand\algorithmicrequire{\textbf{Input:}}
+\algrenewcommand\algorithmicensure{\textbf{Output:}}
+
+\linespread{1}
+\geometry{a4paper,top=3cm,left=3cm,right=2.5cm,bottom=2cm}
+
+\title{\textbf{Laboratory assignment} \\[1ex] \large \textbf{Component} 1-5}
+
+\author{\textbf{Authors:} Alexandru Profir, Tudor-Octavian Mih\u{a}i\c{t}\u{a}\\ \textbf{Group:} ICA 246-2}
+
+\begin{document}
+
+\maketitle
+\hspace{10pt}
+
+\input{chapters/overview/overview}
+\input{chapters/sr-svr/sr-svr}
+\input{chapters/sc-rf/sc-rf}
+
+\bibliographystyle{alpha}
+\bibliography{biblio}
+
+\nocite{*}
+\end{document}

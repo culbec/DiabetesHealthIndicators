@@ -1,0 +1,355 @@
+\subsection{Experimental Evaluation}
+\label{rf-experiments}
+
+This section details the conducted experiments for the Supervised Classification task using the Random Forest model, providing architectural insight in the from-scratch implementation of a Random Forest classifier, alongside the adopted experimental protocol and the results obtained, compared with the built-in \textbf{sklearn} implementation.
+
+
+\subsubsection{Experimental Setup}
+\label{rf-setup}
+
+We implemented a Random Forest–style ensemble classifier composed of decision tree base estimators trained on bootstrap samples. Randomization is introduced through instance-level bootstrapping and per-tree feature subsampling, where each tree is trained on a fixed random subset of input features. During tree construction, all features in the selected subset are considered at each split, and nodes are split to maximize impurity reduction using either the \textit{Gini impurity} or \textit{Entropy} criterion.
+
+\paragraph{Decision tree as base estimator.}
+
+Each tree is trained with a set of stopping conditions, including a maximum depth, a minimum number of samples required to split an internal node, and a minimum number of samples required to be at a leaf node. During tree construction, a candidate split is evaluated by computing the \textbf{impurity decrease}:
+\[
+\Delta I 
+= I(\text{parent}) 
+- \frac{n_L}{n} I(\text{left})
+- \frac{n_R}{n} I(\text{right}),
+\]
+where $I(\cdot)$ denotes a node impurity measure, $n$ is the number of samples in the parent node, and $n_L, n_R$ are the sample counts of the left and right child nodes, respectively. A split is selected greedily by maximizing $\Delta I$.
+
+\par In our implementation, node impurity $I(\cdot)$ can be computed using either \textbf{Gini impurity} or \textbf{Entropy}. Given class proportions $p_k$ for $K$ classes at a node, these metrics are defined as:
+\[
+I_{\text{gini}} = 1 - \sum_{k=1}^{K} p_k^2,
+\qquad
+I_{\text{entropy}} = - \sum_{k=1}^{K} p_k \log_2 p_k.
+\]
+
+\par Gini impurity measures the probability of misclassification when randomly labeling a sample according to the node’s class distribution, while entropy quantifies the uncertainty of the class labels. Both metrics favor splits that produce purer child nodes, though entropy typically penalizes class mixing more strongly.
+
+\paragraph{Ensemble aggregation and prediction.}
+
+For the final prediction, the forest aggregates outputs from individual trees using a voting strategy:
+\begin{itemize}
+    \item \textbf{Hard voting:} the predicted class is the majority vote among all trees.
+    \item \textbf{Soft voting:} the predicted class is obtained by averaging per-tree class probabilities,
+    \[
+    \hat{p}(y=1 \mid x) = \frac{1}{T} \sum_{t=1}^{T} p_t(y=1 \mid x),
+    \]
+    followed by a decision threshold $\tau$ such that $\hat{y}=1$ if $\hat{p}(y=1 \mid x) \ge \tau$.
+\end{itemize}
+
+\par In the from-scratch Random Forest implementation, both voting strategies are supported. The decision threshold $\tau \in (0,1)$ is configurable and allows explicit control over the precision--recall tradeoff, which is particularly relevant in medical diagnosis tasks.
+
+\paragraph{Scratch implementation parameters.}
+
+\par Table~\ref{tbl-rf-scratch-params} lists the main configurable parameters of the from-scratch Random Forest implementation.
+
+\begin{table}[hbtp]
+    \centering
+    \resizebox{\textwidth}{!}{
+        \begin{tabular}{|l|p{9cm}|l|}
+            \hline
+            \textbf{Parameter} & \textbf{Description} & \textbf{Domain} \\
+            \hline
+            n\_trees & Number of decision trees in the forest & $\mathbb{N}^{*}$ \\
+            \hline
+            max\_depth & Maximum depth of each decision tree & $\mathbb{N}^{*} \cup \{\texttt{None}\}$ \\
+            \hline
+            min\_samples\_split & Minimum samples required to split an internal node & $\mathbb{N}^{*}$ \\
+            \hline
+            min\_samples\_leaf & Minimum samples required to create a leaf node & $\mathbb{N}^{*}$ \\
+            \hline
+            impurity\_metric & Impurity function used at each split & \{\texttt{gini}, \texttt{entropy}\} \\
+            \hline
+            vote & Ensemble aggregation strategy & \{\texttt{hard}, \texttt{soft}\} \\
+            \hline
+            threshold & Positive-class decision threshold for soft voting & $(0,1)$ \\
+            \hline
+        \end{tabular}
+    }
+    \caption{Random Forest Scratch Hyperparameters}
+    \label{tbl-rf-scratch-params}
+\end{table}
+
+\subsubsection{Experimental Results}
+\label{rf-results}
+
+We evaluate the Random Forest models in a Supervised Classification context, using a $80\%/20\%$ train-test split. Hyperparameter tuning is performed exclusively on the training split via stratified k-fold cross-validation. The best configuration, selected by a primary scoring metric, is refit on the full training split and evaluated once on the held-out test split.
+
+\paragraph{Feature set and preprocessing.}
+
+Based on the statistical methods implemented during the exploratory analysis of the employed dataset (Section ~\ref{sec:data-analysis}), an automated statistical feature selection mechanism was integrated, in order to filter the most relevant features for predicting the target column of diagnosed diabetes diagnosis. The process is applied to the training split only of the data, to ensure no data distribution leakage occurs.
+
+Since Random Forest is an Ensemble Learning method composed of decision trees weak learners, which are especially good using their splitting mechanisms to select the relevant features and detect the ones that have the same contribution to predicting the target feature, this feature selection optimization step is not as important as it would be in a Linear Regression algorithm, therefore the strategy employed for selecting the features uses \textit{Union} voting and takes into consideration all relevant columns identified by each statistical method employed, selecting both glucose-related characteristics, and lifestyle-oriented ones (Table~\ref{tbl-rf-selected-features}, leaving it up to the weak learners to determine their relevance further.
+
+\begin{table}[H]
+    \centering
+    \footnotesize
+    \begin{tabular}{|l|l|}
+        \hline
+        \textbf{Category} & \textbf{Selected Features} \\
+        \hline
+        Glucose-related & \texttt{glucose\_fasting}, \texttt{glucose\_postprandial}, \texttt{hba1c} \\
+        \hline
+        Lipid profile & \texttt{cholesterol\_total}, \texttt{ldl\_cholesterol}, \texttt{triglycerides} \\
+        \hline
+        Demographic / Lifestyle & \texttt{age}, \texttt{family\_history\_diabetes}, \texttt{physical\_activity\_minutes\_per\_week} \\
+        \hline
+    \end{tabular}
+    \caption{Feature set selected via statistical union-based feature selection}
+    \label{tbl-rf-selected-features}
+\end{table}
+
+All models were trained and evaluated further on the same feature set to ensure a fair comparison.
+
+\paragraph{Cross-validation protocol and refit metric.}
+
+\par We used \textbf{Stratified K-fold Cross-Validation} with $k=5$ folds and shuffling enabled. Since the target distribution can be imbalanced in diagnosis prediction, we selected \textbf{F1-score} as the primary refit metric, due to its ability to balance precision and recall.
+
+\paragraph{Hyperparameter optimization grid.}
+
+\par We performed exhaustive \textbf{Grid Search Cross-Validation} across a series of parameter values considered as general solid choices for configuring a Random Forest model. Table~\ref{tbl-rf-grid} describes the explored hyperparameter space.
+
+\begin{table}[h]
+	\centering
+    \resizebox{0.75\textwidth}{!}{
+	\begin{tabular}{|l|l|}
+		\hline
+		\textbf{Parameter} & \textbf{Value Space} \\
+		\hline
+        n\_trees & [50, 100] \\
+        \hline
+        max\_depth & [10, 15] \\
+        \hline
+        min\_samples\_split & [5, 10] \\
+        \hline
+        min\_samples\_leaf & [2, 5] \\
+        \hline
+        criterion / impurity\_metric & \{\texttt{gini}, \texttt{entropy}\} \\
+		\hline
+	\end{tabular}
+    }
+	\caption{Random Forest Cross-Validation Parameter Grid}
+	\label{tbl-rf-grid}
+\end{table}
+
+\paragraph{Best estimator and performance results.}
+
+Table~\ref{tbl-rf-comparison-results} reports the held-out test set performance of the best Random Forest estimators obtained via grid search cross-validation. The \textbf{sklearn} implementation serves as an optimized baseline, while the from-scratch implementation validates the correctness and robustness of the custom training pipeline. All metrics are computed on the same held-out test split.
+
+\begin{table}[H]
+	\centering
+    \resizebox{0.9\textwidth}{!}{
+	\begin{tabular}{|l|c|c|}
+		\hline
+		\textbf{Metric} & \textbf{Random Forest (Scratch)} & \textbf{Random Forest (sklearn)} \\
+		\hline
+        Accuracy & 0.909 & 0.920 \\
+        \hline
+        Precision & 0.985 & 0.999 \\
+        \hline
+        Recall & 0.850 & 0.866 \\
+        \hline
+        F1-score & 0.917 & 0.928 \\
+        \hline
+        ROC-AUC & 0.938 & 0.943 \\
+        \hline
+        Average Precision (PR-AUC) & 0.969 & 0.971 \\
+        \hline
+        Log Loss & 0.358 & 0.215 \\
+		\hline
+	\end{tabular}
+    }
+	\caption{Random Forest Classification Performance on Held-Out Test Set}
+	\label{tbl-rf-comparison-results}
+\end{table}
+
+All reported metrics are computed on the held-out test split using standard binary classification definitions. Accuracy measures the proportion of correctly classified samples. Precision and recall quantify false positive and false negative behavior, respectively, while the F1-score represents their harmonic mean and is used as the primary refit metric during cross-validation. The ROC-AUC and Average Precision scores evaluate ranking quality based on predicted probabilities, while the Log Loss penalizes miscalibrated probabilistic predictions.
+
+\paragraph{Statistical analysis of cross-validation fold scores.}
+
+Following hyperparameter optimization, the best-performing Random Forest configuration identified by grid search was refit on the full training split. The selected model used $n\_estimators=100$, a maximum tree depth of $15$, a minimum split size of $5$, a minimum leaf size of $2$, and the \texttt{gini} impurity criterion.
+
+In addition to the held-out test metrics, we performed a statistical analysis of the cross-validation fold scores obtained during hyperparameter optimization (Table~\ref{tbl-rf-cv-stats}). Descriptive statistics and a $95\%$ confidence interval were computed for the F1-score across folds. To justify the use of a Student's t-distribution for confidence interval estimation, a Shapiro-Wilk normality test was applied to the fold scores.
+
+
+\begin{table}[H]
+	\centering
+    \resizebox{0.9\textwidth}{!}{
+	\begin{tabular}{|l|l|}
+		\hline
+		\textbf{Statistic} & \textbf{Value} \\
+		\hline
+        Refit Metric & F1-score \\
+        \hline
+        Fold Scores & $(0.9319,\ 0.9274,\ 0.9306,\ 0.9289,\ 0.9310)$ \\
+        \hline
+        Mean & $0.92997$ \\
+        \hline
+        Standard Deviation & $0.00181$ \\
+        \hline
+        Standard Error of the Mean & $0.00081$ \\
+        \hline
+        Minimum / Maximum & $0.92738\ /\ 0.93192$ \\
+        \hline
+        95\% Confidence Interval & $[0.92772,\ 0.93222]$ \\
+        \hline
+        Shapiro--Wilk Test (p-value) & $0.7169$ \\
+        \hline
+	\end{tabular}
+    }
+	\caption{Random Forest Statistical Analysis of Cross-Validation F1 Scores}
+	\label{tbl-rf-cv-stats}
+\end{table}
+
+The Shapiro-Wilk normality test returned a p-value of $0.7169$, which is well above the conventional significance level of $\alpha = 0.05$. This indicates that the cross-validation fold scores do not significantly deviate from a normal distribution. Consequently, the use of a Student’s t-distribution to compute the $95\%$ confidence interval for the mean F1-score is statistically justified.
+
+
+\subsubsection{Discussion}
+\label{rf-discussion}
+
+\paragraph{Relevance of Random Forest for diabetes diagnosis.}
+
+Random Forest is a strong candidate for diabetes diagnosis due to the following properties:
+
+\begin{itemize}
+    \item \textbf{Non-linear modeling capability:} It naturally captures threshold effects and complex interactions between heterogeneous predictors such as glucose measurements, age, and lifestyle indicators, without assuming linear or monotonic relationships.
+    \item \textbf{Robustness to correlated features:} Physiologically related variables (e.g., fasting glucose, postprandial glucose, HbA1c) do not degrade performance, as feature subsampling and ensemble averaging reduce sensitivity to redundancy.
+    \item \textbf{Interpretability support:} While the ensemble itself is complex, Random Forest integrates well with post-hoc explainability techniques (e.g., SHAP), which is critical for clinical decision-support systems.
+\end{itemize}
+
+\paragraph{Interpretation of achieved performance.}
+
+Both implementations achieved strong and stable classification performance on the held-out test split.
+
+\begin{itemize}
+    \item \textbf{Predictive balance:} The F1-scores of $0.917$ (scratch) and $0.928$ (\textbf{sklearn}) indicate an effective balance between precision and recall, appropriate for medical screening tasks.
+    \item \textbf{Precision-dominant behavior:} Precision values above $0.98$ for both models indicate very few false positives, reducing unnecessary clinical follow-ups.
+    \item \textbf{Recall behavior:} Recall values of $0.850$ (scratch) and $0.866$ (\textbf{sklearn}) show that most diabetic cases are detected, with the remaining errors attributable to the default decision threshold.
+    \item \textbf{Ranking quality:} High ROC-AUC ($>0.93$) and Average Precision ($>0.96$) confirm strong discriminative ability across thresholds.
+\end{itemize}
+
+Cross-validation results further support model reliability. The F1-score standard deviation across folds is $0.00181$, and the narrow $95\%$ confidence interval $[0.92772,\ 0.93222]$ indicates low sensitivity to data partitioning. The test F1-score closely matches the cross-validation mean, suggesting good generalization and no overfitting.
+
+\paragraph{Scratch vs. \textbf{sklearn} Random Forest.}
+
+A direct comparison between implementations reveals the following:
+
+\begin{itemize}
+    \item \textbf{Performance:} The \textbf{sklearn} model achieves slightly higher performance (approximately $+1.1\%$ F1-score), which is expected given its optimized split search and mature implementation.
+    \item \textbf{Calibration:} Lower Log Loss for the \textbf{sklearn} model ($0.215$ vs.\ $0.358$) indicates better probability calibration, impacting threshold-independent metrics.
+    \item \textbf{Transparency and control:} The from-scratch implementation offers full visibility into tree construction, voting strategies, and prediction logic, which is valuable for educational purposes and algorithmic inspection.
+\end{itemize}
+
+Overall, the from-scratch Random Forest achieves competitive performance while validating the correctness of the implemented learning pipeline. The modest gap to the library baseline highlights the impact of low-level optimizations rather than conceptual or algorithmic shortcomings.
+
+\paragraph{Model interpretability.}
+
+To analyze the factors driving the Random Forest predictions, we employed \textbf{SHapley Additive exPlanations (SHAP)}, which decompose each model output into additive feature-level contributions. This enables both \textbf{global interpretability}, by identifying which variables are most influential across the dataset, and \textbf{local interpretability}, by explaining individual predictions in a case-specific manner.
+
+SHAP values were computed using the unified \texttt{shap.Explainer} interface. Since explanation cost depends on repeated model evaluations, SHAP computation for the from-scratch Random Forest is slower than for optimized library implementations. To maintain tractable runtime while preserving representativeness, we therefore relied on a \textbf{subsampled background set} and a \textbf{subsampled explanation set}.
+
+
+% Global explanations: Beeswarm + Bar
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.95\textwidth]{assets/figures/rf_scratch_beeswarm.jpeg}
+    \caption{\centering SHAP beeswarm plot for the Random Forest model. Each point represents one sample; the x-axis shows the SHAP value (impact on the model output), while color encodes the feature value (low to high). Features are ordered by global importance.}
+    \label{fig:rf-shap-beeswarm}
+\end{figure}
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.85\textwidth]{assets/figures/rf_scratch_bar.jpeg}
+    \caption{\centering Global SHAP feature importance (mean absolute SHAP value). Higher bars indicate features with stronger average influence on predictions, irrespective of direction.}
+    \label{fig:rf-shap-bar}
+\end{figure}
+
+Figures~\ref{fig:rf-shap-beeswarm} and~\ref{fig:rf-shap-bar} provide complementary global explanations. Both plots consistently indicate that \texttt{hba1c} is the dominant predictor, exhibiting the largest magnitude and variability of SHAP values. High \texttt{hba1c} values strongly increase the predicted probability of diabetes, while low values exert a pronounced protective effect. \texttt{glucose\_fasting} represents the second most influential feature, contributing additional risk stratification. In contrast, demographic, lifestyle, and lipid-related variables (e.g., \texttt{age}, \texttt{physical\_activity\_minutes\_per\_week}, and cholesterol measures) exhibit comparatively smaller contributions, acting primarily as secondary refinements rather than primary decision drivers.
+
+
+% Local explanation: Waterfall
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.9\textwidth]{assets/figures/rf_scratch_waterfall.jpeg}
+    \caption{\centering Local SHAP waterfall plot for a representative test instance. Starting from the expected model output, features push the prediction toward the positive (diabetes) or negative class by additive contributions.}
+    \label{fig:rf-shap-waterfall}
+\end{figure}
+
+Local explanations further illustrate how predictions are formed for individual samples. The waterfall plot in Figure~\ref{fig:rf-shap-waterfall} shows how the model output deviates from the baseline expectation through successive feature contributions. In the illustrated example, low \texttt{hba1c} and \texttt{glucose\_fasting} values produce large negative SHAP contributions, outweighing minor positive effects from other variables and resulting in a low predicted diabetes risk. Such explanations are particularly valuable in clinical decision-support settings, as they explicitly link predictions to clinically interpretable factors.
+
+
+% Feature effect + interaction: Dependence
+\begin{figure}[H]
+    \centering
+  
+    \includegraphics[width=0.8\textwidth]{assets/figures/rf_scratch_dependence_hba1c.jpeg}
+    \caption{\centering SHAP dependence plot for \texttt{hba1c}. The x-axis shows the feature value, while the y-axis shows its SHAP contribution. Color indicates a potentially interacting feature (e.g., \texttt{glucose\_postprandial}), highlighting interaction patterns captured by the ensemble.}
+    \label{fig:rf-shap-dependence}
+\end{figure}
+
+Finally, the dependence plot in Figure~\ref{fig:rf-shap-dependence} highlights non-linear feature effects captured by the ensemble. The contribution of \texttt{hba1c} exhibits threshold-like behavior, with sharp increases in SHAP value beyond specific ranges. Coloring by glucose-related features further reveals interaction effects, indicating that the influence of \texttt{hba1c} is modulated by concurrent glucose measurements. This behavior aligns with known physiological relationships and demonstrates the ability of the Random Forest to model non-linear risk patterns beyond the capacity of linear classifiers.
+
+\paragraph{Comparison to related work.}
+
+Table~\ref{tbl-rf-related-work-comparison} compares our Random Forest classification results with prior studies on diabetes diagnosis. Reported performance in the literature often exceeds $94\%$ accuracy, particularly when evaluated on smaller benchmark datasets such as the Pima Indians Diabetes Dataset~\cite{sarwar2018prediction,peerbasha2023diabetes}, or when advanced imbalance-handling techniques such as SMOTE-Tomek are employed~\cite{abousaber2025robust}.
+
+These results are not directly comparable, as the cited studies use different datasets, feature sets, and class distributions. In contrast, our experiments are conducted on the \textit{Diabetes Health Indicators} dataset comprising $100{,}000$ samples~\cite{thalla2024diabetes}, which reflects a more heterogeneous and realistic clinical population. Within this setting, the obtained performance remains competitive without relying on synthetic resampling, indicating strong generalization and robustness of the proposed Random Forest model.
+
+\begin{table}[H]
+    \centering
+    \resizebox{\textwidth}{!}{
+    \begin{tabular}{|l|c|c|c|c|p{5.8cm}|}
+        \hline
+        \textbf{Study} & \textbf{Accuracy} & \textbf{Precision} & \textbf{Recall} & \textbf{F1-score} & \textbf{Notes} \\
+        \hline
+        Peerbasha et al.~\cite{peerbasha2023diabetes} 
+        & $\sim 94\%$ & $0.94$ & $0.94$ & $0.94$ 
+        & Best performer among SVM and KNN classifiers. \\
+        \hline
+        Sarwar et al.~\cite{sarwar2018prediction} 
+        & $94.1\%$ & $0.93$ & $0.92$ & $0.92$ 
+        & Evaluated on Pima Indians Dataset; RF outperformed Logistic Regression. \\
+        \hline
+        Abousaber et al.~\cite{abousaber2025robust} 
+        & $\sim 98.2\%$ & $0.98$ & $0.98$ & $0.98$ 
+        & AUC $=0.99$; results boosted by SMOTE--Tomek imbalance handling. \\
+        \hline
+        \textbf{scratch RF} 
+        & $90.9\%$ & $0.985$ & $0.850$ & $0.917$ 
+        & Diabetes Health Indicators dataset (100k samples); no synthetic resampling. \\
+        \hline
+        \textbf{sklearn RF} 
+        & $92.0\%$ & $0.999$ & $0.866$ & $0.928$ 
+        & Optimized library baseline on the same dataset and feature set. \\
+        \hline
+    \end{tabular}
+    }
+    \caption{Comparison of Random Forest-based diabetes diagnosis performance across studies}
+    \label{tbl-rf-related-work-comparison}
+\end{table}
+
+\paragraph{Scikit-learn Implementation Details.}
+
+\par To validate the performance of the proposed Random Forest classifier, we benchmarked it against the standard \texttt{RandomForestClassifier} implementation. This estimator is a mature and highly optimized library baseline that relies on efficient C-optimized routines for decision tree construction, impurity-based split search, and ensemble aggregation, making it a widely adopted reference in applied machine learning.
+
+The \textbf{sklearn} implementation constructs each decision tree using greedy impurity minimization (Gini or entropy) and employs bootstrap sampling and feature subsampling to decorrelate trees within the ensemble. These design choices improve generalization and reduce variance compared to single-tree classifiers, particularly in high-dimensional or noisy settings.
+
+We employed the \emph{same experimental protocol} as for the from-scratch Random Forest to ensure a fair comparison. Hyperparameter tuning was performed using $5$-fold stratified cross-validation on the training split only, with \textbf{F1-score} used as the refit metric. The explored parameter grid matches the one described in Table~\ref{tbl-rf-grid}, and the selected best estimator was refit on the full training split before evaluation.
+
+\par The best \textbf{sklearn} configuration was obtained with $n\_estimators=100$, $\texttt{max\_depth}=15$, $\texttt{min\_samples\_split}=5$, $\texttt{min\_samples\_leaf}=2$, and the \texttt{gini} impurity criterion. Final performance metrics are reported on the held-out test set and directly compared to the from-scratch implementation in Table~\ref{tbl-rf-comparison-results}.
+
+\subsubsection{Conclusion and Future Directions}
+\label{rf-conclusion}
+
+\par In conclusion, the Random Forest classifier provides robust predictive performance for diabetes diagnosis, achieving high discriminative ability while remaining interpretable through feature attribution methods.
+
+\par Future work directions include:
+\begin{enumerate}
+    \item Improving the efficiency of the from-scratch implementation (vectorized inference, optimized split search, parallelism).
+    \item Better threshold calibration to control the clinical precision--recall tradeoff (e.g., maximizing recall under a minimum precision constraint).
+    \item Extending evaluation with calibration metrics and more detailed error analysis (confusion matrix stratified by risk factors).
+\end{enumerate}

@@ -1,0 +1,110 @@
+\subsection{Support Vector Regression}
+\label{svr-definition}
+
+\par Unlike linear regression, Support Vector Regression (\textbf{SVR}) attempts to fit a set of data points by finding the optimal set of hyperplanes that maximizes the separation of classes with respect to a fixed threshold margin $\varepsilon$. Unlike the classical Support Vector Machine (\textbf{SVM}) framework, SVR defines a \texttt{"tube"} of width/radius $2\cdot\varepsilon$ around the regression function. The errors within the tube are ignored, while errors outside are penalized in a linear manner; thus, the value $\varepsilon$ highly influences the performance of the trained model.
+
+\subsubsection{Target function}
+\label{svr-target-function}
+
+\par In the context of supervised learning, algorithms assume that there exists an unknown and non-unique function $f$ that accurately maps the input space $X$ to the continuous output domain $Y$, where $Y \subseteq R^n$. Formally, such a function is expressed as:
+
+\[
+f: X \rightarrow Y
+\]
+
+where $X$ represents the input space and $Y$ represents the continuous output domain. In our regression setting, a sample $x \in X$ is represented by a subset of features selected during the data analysis phase, while $y \in Y$ is represented by a 1 by 1 vector encompassing the \texttt{diabetes risk score}.
+
+\subsubsection{Learning hypothesis}
+\label{svr-learning-hypothesis}
+
+\par A hypothesis $h(x)$ is an approximation of the target function selected from a hypothesis space $H$. The hypothesis chosen as the backbone of the algorithm is the one that best approximates the target function: $h(x) \approx f(x)$.
+
+\par For example, the hypothesis for linear-kernel-based SVR is defined as:
+
+\[
+h(x) = \langle w,x \rangle + b
+\]
+
+where $w$ represents the weight vector (a not necessarily optimized normal to the hyperplane), $x \in X$ represents a single sample from the input space, $b$ represents the bias term, and $\langle \cdot,\cdot \rangle$ represents the dot product in the input space, or feature space if the \texttt{kernel trick} is employed.
+
+\subsubsection{Representation of the learned function}
+\label{svr-representation}
+
+\par The algorithms employed by SVR when trying to fit the data address two separate problems:
+
+\begin{enumerate}
+    \item \textbf{Intuitive/Primal way}: finding the weights for each feature in order to predict the output; this method is hard to implement when the data to be fit is in a non-linear shape, as in kernel usage over the feature space; kernels are used to project the initial feature space into a non-linear shape by creating non-linear combinations from the initial features, followed by a back projection to the initial shape.
+    \item \textbf{Dual way}: instead of weighting features, this method implies the weighting of data points; this helps us to measure how similar a data point is compared to the ones used in the training phase; thus, the algorithm does not care about the features directly.
+\end{enumerate}
+
+\par As for the representation of the learning function, we can express it as such:
+
+\[
+h(x^*) = \sum_{i=1}^{n}{(\alpha_i - \alpha^*_i) \cdot \langle x_i, x^* \rangle} + b
+\]
+
+where
+\begin{itemize}
+    \item $h(x^*)$ represents the predicted value for a new input sample $x$;
+    
+    \item $n$ is the total number of training samples;
+    
+    \item $x_i$ represents a data point seen in training, while $x^*$ represents a new data point, unseen in the training phase;
+    
+    \item $\langle \cdot,\cdot \rangle$ represents the \texttt{kernel function}, which measures the similarity between two data points; if the data points are very similar, the result will be large, compared to a small result when the data points are very dissimilar;
+    
+    \item $\alpha_i$ and $\alpha^*_i$ represents the \texttt{dual coefficients}, also named \texttt{Lagrange coefficients} or \texttt{importance weights}:
+    \begin{itemize}
+        \item $\alpha_i$: the regression line is pushed \texttt{up} because the error of the data point $x_i$ was \texttt{below} the error tube;
+        \item $\alpha^*_i$: the regression line is pushed \texttt{down} because the error of the data point $x_i$ was \texttt{above} the error tube;
+        \item Following the principle of \texttt{Occam's razor}, data points that are considered a "good fit" because they are inside the error tube will have both coefficients equal to $0$; these data points are irrelevant to the model.
+        \item Only those data points that are outside the error tube are relevant in the learning phase; thus, all data points $\alpha_i - \alpha^*_i \neq 0$ are the \texttt{Support Vectors}.
+    \end{itemize}
+\end{itemize}
+
+\par Therefore, the internal representation of the learning function will be stored as:
+\begin{itemize}
+    \item a subset $SV \subset X$ of data points which are not inside the error tube;
+    
+    \item a vector of coefficients/weights $\beta$, where $\beta_i = (\alpha_i - \alpha^*_i)$; a positive $\beta_i$ suggests that the data point pulls the regression line \texttt{up}, while a negative $\beta_i$ suggests that the data point pulls the regression line \texttt{down}.
+\end{itemize}
+
+\subsubsection{Learning algorithm}
+\label{svr-learning-algorithm}
+
+\par The learning algorithm is represented as an optimization procedure of a regularized risk function under the \texttt{dual formulation} setting.
+\begin{enumerate}
+    \item \textbf{Goal}: finding a learning hypothesis that is as \texttt{"flat"} as possible, resulting in minimal model complexity, while keeping the prediction error in the training phase within an error threshold $\varepsilon$.
+    \begin{itemize}
+        \item The loss function used in this process is an \texttt{$\varepsilon$-insensitive loss function}, which discards errors smaller than $\varepsilon$, which are those inside the error tube.
+        \[
+        L_\varepsilon(y, h(x)) =
+        \begin{cases}
+            0, if |y - h(x)| \le \varepsilon \\
+            |y - h(x)| - \varepsilon, otherwise
+        \end{cases}
+        \]
+
+        \item The minimization goal lies in the minimization of the regularized risk function:
+        \[
+        F(w) = \frac{1}{2} \lVert w \rVert^2 + C \sum_{i=1}^{n}{L_\varepsilon(y_i-h(x_i))}
+        \]
+        where
+        \begin{itemize}
+            \item $\frac{1}{2} \lVert w \rVert^2$ represents the regularization term; minimizing the norm of the weights keeps the error tube as "flat" as possible, while also preventing overfitting;
+            \item $C$ represents the regularization parameter, controlling the trade-off between flatness and the degree to which deviations larger than $\varepsilon$ influence the result;
+            \item $\sum L_\varepsilon$ represents the sum of all errors that fall outside the error tube.
+        \end{itemize}
+    \end{itemize}
+
+    \item \textbf{Optimization Algorithm}: since the intuitive objective function involves absolute values, it is difficult to compute due to non-differentiability at $0$. By introducing \texttt{Lagrange multipliers}, we convert the initial problem into a \texttt{quadratic programming} problem known as the \texttt{Dual Problem}. Instead of minimizing the weights of each feature, the algorithm maximizes the following function with respect to the dual coefficients $\alpha^+, \alpha^-$, in order to maximize the margin between data points:
+    \[
+    W(\alpha, \alpha^*) = -\frac{1}{2} \sum_{i,j=1}^{n}{(\alpha_i - \alpha^*_i)(\alpha_j-\alpha^*_j)\langle x_i, x_j \rangle - \varepsilon \sum_{i=1}^{n}{(\alpha_i+\alpha^*_i)} + \sum_{i=1}^{n}{y_i(\alpha_i-\alpha^*_i)}}
+    \]
+    The implementation is performed according to the Sequential Minimal Optimization (\textbf{SMO}) algorithm:
+    \begin{enumerate}
+        \item Breaking the QP problem into the smallest possible sub-problems by selecting a pair of dual coefficients to optimize at each step;
+        \item Analytical optimization is possible because only two variables are variable at a given step; therefore, no matrix inversion is needed;
+        \item Convergence is guaranteed due to the algorithm iterating through dual coefficient pairs until the Karush-Kuhn-Tucker (\textbf{KKT}) conditions are satisfied, within a specified tolerance; the solution is considered globally optimal when the QP problem is as high as possible.
+    \end{enumerate}
+\end{enumerate}

@@ -1,0 +1,312 @@
+\subsection{Data Analysis}
+\label{sec:data-analysis}
+
+We conduct a series of data analysis experiments on the \emph{Diabetes Health Indicators} dataset \cite{thalla2024diabetes} in order to understand the statistical properties of the features, their relationships to each other, and their relevance for predicting the binary outcome variable \texttt{diagnosed\_diabetes}. The analysis includes descriptive statistics, distributional examination, correlation assessment, statistical independence testing, and feature importance estimation based on filter methods.
+
+\vspace{0.3cm}
+\subsubsection{Dataset Description and Descriptive Statistics}
+
+The dataset comprises $N = 100{,}000$ instances and $d = 31$ attributes. These attributes cover:
+\begin{itemize}
+    \item demographic factors (e.g.\ age, gender, ethnicity, education level, income level, employment status),
+    \item lifestyle indicators (e.g.\ smoking status, alcohol consumption per week, physical activity minutes per week, diet score, sleep hours per day, screen time hours per day),
+    \item medical history (family history of diabetes, hypertension history, cardiovascular history),
+    \item physiological and biochemical measurements (e.g.\ BMI, waist-to-hip ratio, blood pressure values, heart rate, lipid profile, fasting and postprandial glucose, insulin level, HbA1c),
+    \item a composite \emph{diabetes risk score}, the \emph{diabetes stage}, and the binary target \texttt{diagnosed\_diabetes}.
+\end{itemize}
+
+For each numerical variable, standard descriptive statistics (mean, variance, minimum, maximum, quartiles) were computed. Given a numerical feature $X = (x_1, \dots, x_N)$, the empirical mean and variance are given by:
+\[
+\bar{x} = \frac{1}{N}\sum_{i=1}^{N} x_i,
+\qquad
+\operatorname{Var}(X) = \frac{1}{N-1}\sum_{i=1}^{N}(x_i - \bar{x})^2
+\]
+
+These statistics confirm that:
+\begin{itemize}
+    \item Most clinical variables (e.g.\ glucose values, lipid parameters, blood pressure) span realistic clinical ranges with substantial dispersion;
+    \item Several lifestyle variables (e.g.\ physical activity) present highly heterogeneous values, with a large mass at relatively low activity levels;
+    \item Categorical variables (such as gender, ethnicity, education level, employment status, smoking status, and diabetes stage) are appropriately encoded in a finite number of categories and later transformed into numerical codes for subsequent analysis.
+\end{itemize}
+
+The descriptive analysis was carried out both on the raw dataset and on a preprocessed version in which missing values were handled, categorical features were numerically encoded, and data types were downcast to reduce memory usage, without altering the underlying information.
+
+\vspace{0.3cm}
+\subsubsection{Distributional Analysis and Visualisation}
+
+To better understand the empirical distributions of the features and to identify potential outliers and deviations from normality, several visualizations were employed on the numerical attributes of the dataset. Due to the high dimensionality of the feature space, we chose to visualize only a subset of characteristics in order to keep the visualizations relevant.
+
+\begin{description}
+    \item[Boxplots.] Boxplots were used to summarize the distribution of each continuous variable through its median, interquartile range (\textbf{IQR}) and potential outliers. For a variable $X$, the boxplot highlights:
+    \begin{itemize}
+        \item the lower ($Q_1$ / 25th percentile), the median ($Q_2$ / 50th percentile), and the upper ($Q_3$ / 75th percentile) quartiles,
+        \item observations falling outside the typical range, often defined as points beyond $Q_1 - 1.5 \cdot IQR$ or $Q_3 + 1.5 \cdot IQR$.
+    \end{itemize}
+    As shown in Figure~\ref{data-analysis:boxplots}, the resulting boxplots indicate:
+    \begin{itemize}
+        \item noticeable right-skewed distributions for variables such as triglycerides, LDL cholesterol and postprandial glucose, with several high-value outliers;
+        \item a moderate spread for BMI and waist-to-hip ratio, with some extreme values but largely plausible ranges;
+        \item a binary or near-binary pattern for some history variables (e.g.,\ hypertension history, cardiovascular history), reflecting the presence or absence of specific conditions.
+    \end{itemize}
+
+    \begin{figure}[H]
+    \centering
+        \includegraphics[
+            width=\linewidth,
+            keepaspectratio
+        ]{assets/figures/boxplots.png}
+        \caption{Boxplots - selected subset of features}
+        \label{data-analysis:boxplots}
+    \end{figure}
+
+    \item[Histograms and Density Plots.] Histograms and smoothed distribution plots (e.g., kernel density estimates) were employed to inspect the shape of the distributions and the presence of skewness or multimodality.
+    Supported by Figure~\ref{data-analysis:histograms} and Figure~\ref{data-analysis:distplots}, the analysis shows that:
+    \begin{itemize}
+        \item Many physiological and biochemical measurements deviate from a Gaussian distribution, often exhibiting skewness and heavy tails;
+        \item Lifestyle attributes, such as physical activity minutes per week and alcohol consumption, are highly skewed towards lower values;
+        \item The composite diabetes risk score displays a unimodal but non-symmetric distribution, consistent with being an aggregate measure of several heterogeneous risk factors.
+    \end{itemize}
+    These distributional properties support the use of learning methods that do not rely on strong parametric assumptions (e.g.,\ normality), such as tree-based models.
+
+    \begin{figure}[H]
+    \centering
+        \includegraphics[
+            width=\linewidth,
+            height=0.65\textheight,
+            keepaspectratio
+        ]{assets/figures/histograms.png}
+        \caption{Histograms - Selected subset of features}
+        \label{data-analysis:histograms}
+    \end{figure}
+
+    \begin{figure}[H]
+    \centering
+        \includegraphics[
+            width=\linewidth,
+            height=0.8\textheight,
+            keepaspectratio
+        ]{assets/figures/distplots.png}
+        \caption{Distplots - Selected subset of features}
+        \label{data-analysis:distplots}
+    \end{figure}
+\end{description}
+
+\vspace{0.3cm}
+\subsubsection{Correlation Analysis}
+
+To quantify linear relationships between pairs of numerical variables and to detect redundancy among features, the Pearson correlation matrix was computed on the numerically encoded dataset.
+
+Given two numerical features, $X$ and $Y$, the Pearson correlation coefficient is defined as:
+\[
+\rho_{X,Y} = \frac{\operatorname{Cov}(X,Y)}{\sigma_X \sigma_Y}
+= \frac{\frac{1}{N-1}\sum_{i=1}^{N}(x_i-\bar{x})(y_i-\bar{y})}
+{\sqrt{\frac{1}{N-1}\sum_{i=1}^{N}(x_i-\bar{x})^2} \sqrt{\frac{1}{N-1}\sum_{i=1}^{N}(y_i-\bar{y})^2}}
+\]
+
+The resulting correlation matrix shown in Figure~\ref{data-analysis:corr-matrix} reveals:
+\begin{itemize}
+    \item strong positive correlations within groups of related clinical measurements, such as total cholesterol, LDL cholesterol and triglycerides;
+    \item pronounced associations between glycaemic biomarkers (fasting and postprandial glucose, HbA1c) and the diabetes risk score;
+    \item moderate correlations between anthropometric indices (BMI, waist-to-hip ratio) and diabetes-related variables;
+    \item generally weaker correlations between demographic or lifestyle variables and the more direct clinical indicators.
+\end{itemize}
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[
+        width=\linewidth,
+        height=0.8\textheight,
+        keepaspectratio
+    ]{assets/figures/corr_matrix.png}
+    \caption{Correlation Matrix}
+    \label{data-analysis:corr-matrix}
+\end{figure}
+
+This analysis highlights clusters of highly correlated variables, which may later be considered for dimensionality reduction or regularization, as they provide overlapping information.
+
+\vspace{0.3cm}
+\subsubsection{Statistical Independence Testing}
+
+To assess the degree of association between each feature and the binary target \texttt{diagnosed\_diabetes}, a chi-squared test of independence was performed. For each feature-target pair, a contingency table was constructed (using appropriate discretization where required), and the Pearson chi-squared statistic was computed.
+
+Let the contingency table entries be $O_{ij}$ (observed frequencies) and $E_{ij}$ (expected frequencies under independence). The test statistic is:
+\[
+\chi^2 = \sum_{i}\sum_{j} \frac{(O_{ij} - E_{ij})^2}{E_{ij}},
+\]
+with an associated p-value obtained from the chi-squared distribution with the appropriate degrees of freedom.
+
+The chi-squared analysis shown in Figure~\ref{data-analysis:chi2-classif} indicates that:
+\begin{itemize}
+    \item \texttt{family\_history\_diabetes}, \texttt{glucose\_postprandial}, and \texttt{hba1c} display exceptionally larger $\chi^2$ values, compared to all other features;
+    \item This suggests a strong correlation between the target variable, \texttt{diagnosed\_diabetes}, and strong indicators regarding diabetes diagnosis.
+    \item A small subset of variables yields high p-values, suggesting limited predictive relevance with respect to the target and marking them as potential candidates for removal in more constrained models.
+\end{itemize}
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[
+        width=\linewidth,
+        height=0.8\textheight,
+        keepaspectratio
+    ]{assets/figures/chi2_classif.png}
+    \caption{$\chi^2$ Independence Test - Classification Target Variable}
+    \label{data-analysis:chi2-classif}
+\end{figure}
+
+This statistical test complements the correlation analysis by directly targeting dependence with the outcome variable.
+
+\vspace{0.3cm}
+\subsubsection{Feature Importance and Selection}
+
+To identify the most informative features and reduce dimensionality while preserving predictive power, two filter-based feature selection approaches were applied: variance thresholding and univariate scoring. A relief-based method was also considered but not ultimately used due to its high memory requirements for the given dataset size.
+
+
+\begin{description}
+    \item[Variance Thresholding.] Variance thresholding removes features whose variance is below a specified threshold~$\theta$, under the rationale that features with very low variability carry limited discriminatory information. Formally, a feature $X$ is discarded if
+    \[
+    \operatorname{Var}(X) < \theta
+    \]
+    In this analysis, a threshold of $\theta = 0.2$ was employed on the numerically encoded dataset. Only a small number of features failed to satisfy this criterion, confirming that most variables show sufficient variation across instances.
+
+    \item[Univariate Feature Selection.] To estimate the individual discriminative power of each feature, a univariate F-test was applied. The test measures how well a feature separates the two classes by comparing the variance of its values \emph{between} classes to the variance \emph{within} classes. For a feature $X$, the F-statistic is defined as:
+    
+    \[
+    F = \frac{\text{variance between classes}}{\text{variance within classes}}
+    \]
+
+    Features with a higher F-statistic (or equivalently, with a smaller associated p-value) provide stronger separation between diabetic and non-diabetic instances and are therefore considered more informative.
+
+    The F-test was accompanied by the Mutual Information test, described by the following formula:
+
+    \[
+    MI(X, Y) = \sum_{x \in X}\sum_{y \in Y}{P(X=x, Y=y)\log(\frac{P(X=x, Y=y)}{P(X=x) \cdot P(Y=y)})}
+    \]
+
+    Mutual information tests how two variables may influence each other by comparing how the joint occurrence of both $X$ and $Y$ may occur by taking the events $X$ and $Y$ indepedently. The logarithm measures the information gained about $X$ knowing $Y$ and vice-versa, while the double summation sums up the information gain across the event horizon of $X$ and $Y$
+\end{description}
+
+The resulting ranking present in Figure~\ref{data-analysis:univariate-fs-feature-score-comparison} is consistent with the medical intuition and with the chi-squared analysis:
+\begin{itemize}
+    \item Glucose-related measures, HbA1c, and the composite diabetes risk score are among the top-ranked features.
+    \item Several physiological variables (such as blood pressure and lipid parameters) also receive considerable scores;
+    \item Certain demographic and lifestyle attributes obtain much lower scores, indicating a weaker direct contribution to class discrimination.
+    \item The differences between the F-test and the Mutual Information test come from the assumption of the F-test that the dependencies are linear, which does not always happen in this case; Mutual Information is able to capture any kind of dependency between variables, thus resulting in slight differences in both classification and regression scenarios.
+\end{itemize}
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[
+        width=\linewidth,
+        height=0.4\textheight,
+        keepaspectratio
+    ]{assets/figures/univariate_fs_classif_feature_comparison.png}
+    \includegraphics[
+        width=\linewidth,
+        height=0.4\textheight,
+        keepaspectratio
+    ]{assets/figures/univariate_fs_regr_feature_comparison.png}
+    \caption{Feature Scores Comparison - Classification \& Regression Target Variable}
+    \label{data-analysis:univariate-fs-feature-score-comparison}
+\end{figure}
+
+\par Following \texttt{Occam's razor} principle, Table~\ref{tbl-classif-selected-features-majority} and Table~\ref{tbl-regr-selected-features-majority} highlight the features selected through the feature selection process, using a threshold equal to $0.2$ and a majority voting strategy. This narrows the feature space enough so that the model does not struggle to learn the representation of the sample space, but it also introduces the underfitting risk given the drastic reduction of the number of features.
+
+\begin{table}[h]
+	\centering
+    \resizebox{\textwidth}{!}{
+	\begin{tabular}{|l|l|l|l|l|l|l|}
+		\hline
+		\textbf{Feature} & \textbf{F-Score} & \textbf{Mutual-Info Score} & \textbf{$\chi^2$ Value} & \textbf{Correlation} & \textbf{Variance} & \textbf{Mean Score}\\
+		\hline
+        hba1c & $1.000000e+00$ & 1.000000 & $8.402536e-01$ & 0.679404 & $9.297901e-05$ & 0.703950 \\
+        \hline
+        glucose\_postprandial & $7.669454e-01$ & 0.649412 & $8.062800e-01$ & 0.629832 & $1.343164e-01$ & 0.597357 \\
+        \hline
+        glucose\_fasting & $4.120398e-01$ & 0.375798 & $3.369023e-01$ & 0.510919 & $2.594257e-02$ & 0.332320 \\
+		\hline
+	\end{tabular}
+    }
+	\caption{Classification Task - Selected Features - Majority Voting}
+	\label{tbl-classif-selected-features-majority}
+\end{table}
+
+\begin{table}[h]
+	\centering
+    \resizebox{\textwidth}{!}{
+	\begin{tabular}{|l|l|l|l|l|l|}
+		\hline
+		\textbf{Feature} & \textbf{F-Score} & \textbf{Mutual-Info Score} & \textbf{Correlation} & \textbf{Variance} & \textbf{Mean Score}\\
+		\hline
+        family\_history\_diabetes & 1.000000 & 1.000000 & 0.733082 & $2.403806e-05$ & 0.683277 \\
+        \hline
+        physical\_activity\_minutes\_per\_week & 0.118700 & 0.293177 & 0.348120 & $1.000000e+00$ & 0.439999 \\
+        \hline
+        age & 0.280752 & 0.773999 & 0.495927 & $3.417598e-02$ & 0.396214 \\
+        \hline
+        glucose\_fasting & 0.243972 & 0.361410 & 0.469935 & $2.594257e-02$ & 0.275315 \\
+		\hline
+	\end{tabular}
+    }
+	\caption{Regression Task - Selected Features - Majority Voting}
+	\label{tbl-regr-selected-features-majority}
+\end{table}
+
+\vspace{0.3cm}
+\subsubsection{Data Visualization through Component Reduction}
+
+To explore the intrinsic structure of the dataset in a non-linear, low-dimensional space and to visually assess potential separability between classes, the \emph{Uniform Manifold Approximation and Projection} (UMAP) algorithm was applied to the numerically preprocessed feature matrix.
+
+UMAP is a manifold-learning technique that constructs a weighted graph representing local relationships in the high-dimensional space and then optimizes a low-dimensional embedding that preserves these neighborhood structures as faithfully as possible.
+
+UMAP was selected over alternative dimensionality reduction techniques such as Principal Component Analysis (PCA) and \textit{t}-SNE due to its ability to capture complex, non-linear relationships that are characteristic of clinical and behavioral health data.  PCA, being linear, cannot reveal complex relationships that may exist between variables (as is the case of metabolic markers, lifestyle factors, and physiological measures from the dataset), while \textit{t}-SNE, although effective at preserving local neighborhoods, distorts global structure and scales poorly to large datasets. UMAP provides a more balanced preservation of local and global topology, offers faster computation on high-dimensional data of this size, and yields stable embeddings that align well with both the diabetes diagnosis and the continuous variation in the risk score. This makes it particularly suitable for visualizing potential class separability and population substructure in the Diabetes Health Indicators dataset.
+
+Given a dataset $X = \{x_1, \dots, x_N\}$, UMAP proceeds by:
+\begin{enumerate}
+    \item Computing pairwise distances and building a fuzzy topological representation of the data manifold using $k$-nearest neighbors;
+    \item Constructing a low-dimensional graph whose edge weights are optimized to match the high-dimensional graph using stochastic gradient descent;
+    \item Producing a two- or three-dimensional embedding in which similar observations are placed close together, while dissimilar ones are pushed apart.
+\end{enumerate}
+
+The resulting UMAP projections shown in Figures~\ref{data-analysis:umap-classif2d} and 2ref{data-analysis:umap-regr3d} reveal the following key patterns:
+\begin{itemize}
+    \item \textbf{UMAP embedding colored by diagnosed diabetes (2D plot):} the projection cleanly separates the dataset into two distinct regions corresponding to the positive and negative classes. This indicates that the full multivariate feature space contains sufficiently strong signals, primarily driven by glycaemic measurements and metabolic indicators, to linearly or non-linearly distinguish diabetic individuals from non-diabetic ones.
+    \item \textbf{UMAP embedding colored by diabetes risk score (3D plot):} the three-dimensional embedding displays a smooth, continuous gradient of color across each cluster, reflecting how the risk score varies gradually within the manifold. Higher-risk observations tend to group closer together, while lower values form separate, well-defined subregions, suggesting that the risk score aligns with the underlying geometry of the clinical and behavioral features.
+    \item \textbf{Cluster substructure and manifold shape:} both embeddings exhibit characteristic ``lobed'' subclusters, a typical outcome of UMAP when high-dimensional neighborhoods compress into lower dimensions. These structures  represent finer stratifications of the population, such as combinations of metabolic markers, lifestyle factors, or demographic attributes, while still maintaining the clear global separation driven by the diabetic status.
+\end{itemize}
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[
+        width=\linewidth,
+        height=0.8\textheight,
+        keepaspectratio
+    ]{assets/figures/umap_classif2d.png}
+    \caption{UMAP Visualization - Classification Setting}
+    \label{data-analysis:umap-classif2d}
+\end{figure}
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[
+        width=\linewidth,
+        height=0.8\textheight,
+        keepaspectratio
+    ]{assets/figures/umap_regr3d.png}
+    \caption{UMAP Visualization - Regression Setting}
+    \label{data-analysis:umap-regr3d}
+\end{figure} 
+
+\vspace{0.3cm}
+\subsubsection{Summary of Findings}
+
+In summary, the data analysis experiment conducted comprises:
+\begin{itemize}
+    \item \textbf{Descriptive statistics and dataset characterisation}, confirming realistic ranges and substantial variation for most clinical and lifestyle features.
+    \item \textbf{Distributional analysis and visualization} via boxplots, histograms, and density plots, revealing skewness, heavy tails, and outliers in several key variables.
+    \item \textbf{Correlation analysis} through a Pearson correlation matrix, highlighting strongly related groups of clinical measurements and suggesting potential redundancy.
+    \item \textbf{Statistical independence testing} using chi-squared tests between each feature and the diabetes diagnosis, quantifying the strength of association with the target.
+    \item \textbf{Feature importance and selection} using variance thresholding and univariate filter methods, supported by (but ultimately not extended with) a Relief-based approach.
+    \item \textbf{UMAP visualizations} provide insightful component reduction results, suggesting patient profiles according to the reduced features.
+\end{itemize}
+
+Collectively, these analyses provide a comprehensive understanding of the structure and informativeness of the dataset. They confirm the central role of glycemic control indicators and related metabolic measures in predicting diabetes, while also clarifying the complementary and sometimes limited contributions of demographic and lifestyle variables. This knowledge directly informs the subsequent design and evaluation of the supervised learning models.

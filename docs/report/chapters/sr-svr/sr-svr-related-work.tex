@@ -1,0 +1,26 @@
+\subsection{Related Work}
+\label{svr-related-work}
+
+\par Support Vector Machines have been extensively employed and validated in the medical domain, particularly in tasks regarding diabetes management. While early applications focused on binary classification, for example, various diagnosis applications, researchers have demonstrated the efficacy of this particular machine learning algorithm for predicting continuous physiological parameters, establishing a strong foundation for approximating glucose values or risk scores.
+
+\subsubsection{Mathematical Foundation of SVR in Medicine}
+\label{svr-mathematical-foundation}
+
+\par SVR is suitable, from a theoretical perspective, for medical regression tasks due to its ability to handle non-linear attribute relationships while minimizing overfitting. As detailed by \cite{zhang2020support}, SVR differs from traditional regression by introducing an $\varepsilon$-insensitive loss function, as described in \ref{svr-definition}. The authors described how this loss function allows the model to ignore errors within a certain threshold ($\varepsilon$) while minimizing the weight vector $||w||^2$ in order to flatten the resulting error tube and to provide a smooth solution. Due to the critical nature of the approached problem, that being the sensitivity of health indicators, this handles the balance between model complexity and training error where noise and individual variability are common.
+
+\subsubsection{Continuous Glucose Prediction Application}
+\label{svr-continuous-glucose-prediction}
+
+\par Glucose forecasting for type I and type II diabetes patients is the most direct precedent for using SVR in medical prediction tasks. \cite{hamdi2018accurate} successfully applied this technique in order to predict continuous blood glucose levels using \textbf{Continous Glucose Monitoring} (\textbf{CGM}) data. Their study highlighted that SVR, particularly when optimized with algorithms such as Differential Evolution (\textbf{DE}), could accurately model the non-linear fluctuations of glucose levels, especially by continuously improving a candidate solution with respect to a measure of quality (\texttt{glucose levels}), achieving this by employing various \textbf{metaheuristics}. The researchers achieved a Root Mean Square Error (\textbf{RMSE}) as low as $9.44$ mg/dL for 15-minute prediction horizons.
+
+\par Similarly, \cite{georga2013glucose} utilized SVR to predict subcutaneous glucose concentrations to anticipate hypoglycemic events. Their research is especially relevant due to its ability to demonstrate how this algorithm can integrate multivariate inputs, such as insulin intake, meal-related data, and physical activity, to regress a future physiological state. They concluded that SVR outperformed other machine learning techniques, such as MLP neural networks, in specific diurnal prediction tasks, further validating the algorithm's robustness in handling multi-dimensional clinical attributes.
+
+\subsubsection{Relevance of Feature Sets}
+\label{svr-relevance-feature-sets}
+
+\par While the aforementioned papers focus on modeling regression tasks, the validity of using standard health indicators, such as age, BMI, or glucose, for diabetes modeling raises questions regarding their impact on the target variables. This is supported by classification literature, as \cite{viloria2020diabetes} applied SVMs to diagnosed diabetes in a Colombian dataset, a country that has the third highest number of adults (20-79 years) with diabetes in the South America region. While achieving $95.36\%$ accuracy, they crucially identified that a compact feature set including age, BMI, and blood glucose was sufficient for high-performance modeling. This supports the feature selection typically found in diabetes risk datasets, including the dataset used in this study, and justifies the use of these specific variables for regression tasks.
+
+\subsubsection{Conclusion}
+\label{svr-related-work-conclusion}
+
+\par Collectively, these studies demonstrate the potential that SVR poses for regressing continuous diabetes-related metrics. The transition from predicting blood glucose levels to predicting a diabetes risk score constitutes a change in the target variable but relies on the same underlying capacity of SVR to model non-linear interactions between demographic and physiological health indicators.
