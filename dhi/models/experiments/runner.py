@@ -21,7 +21,7 @@ class ExperimentRunner:
     def __init__(self, model_config: Dict[str, Any], preprocessor_config: Dict[str, Any]) -> None:
         self._init_model(**model_config)
 
-        self._preprocessor = None  # TODO: handle case where model is loaded from pretrained path and preprocessor may remain undefined and unfitted on training data
+        self._preprocessor = None
         self._preprocessor_config = preprocessor_config
 
     def _init_model(self, **kwargs) -> None:

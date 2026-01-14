@@ -7,7 +7,7 @@ from .node import Node
 def build_graph(tree: Tree, filename: str, path: str, view: bool = True) -> Digraph:
     node_attr = [("shape", "box"), ("style", "filled,rounded"), ("fontname", "helvetica")]
 
-    graph = Digraph("DTree", filename=filename, directory=path, format="png", node_attr=node_attr)
+    graph = Digraph("DTree", filename=filename, directory=path, format="svg", node_attr=node_attr)
 
     _traverse_tree(graph, tree.root)
 

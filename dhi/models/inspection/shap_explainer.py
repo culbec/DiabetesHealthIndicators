@@ -1,9 +1,11 @@
 from typing import Optional, Tuple, TypeAlias
 
 import matplotlib.pyplot as plt
+import shap
 import numpy as np
 import plotly.graph_objects as go
-import shap
+
+from shap import Explanation
 from numpy.typing import ArrayLike
 from shap.maskers import Independent
 
@@ -89,8 +91,9 @@ class SHAPModelExplainer:
         masker = Independent(data=X_train, max_samples=background_samples)
 
         explainer = self._explainer_config["class"](
-            model_arg,
-            masker=masker,
+            self._runner._model,
+            # masker=masker,
+            data=X_train,
             feature_names=feature_names,
             **self._explainer_config["kwargs"],
         )
@@ -102,10 +105,18 @@ class SHAPModelExplainer:
         # Reduce SHAP values to 2D for ranking or plotting
         shap_matrix = shap_values
         if shap_values.ndim == 3:
-            if shap_matrix.shape[1] == 2:
-                shap_matrix = shap_matrix[:, 1, :]  # Prefer positive class explanation for binary classification
+            if shap_matrix.shape[2] == 2:
+                shap_matrix = shap_matrix[:, :, 1]  # Prefer positive class explanation for binary classification
             else:
-                shap_matrix = np.mean(shap_matrix, axis=1)  # Average over classes for multi-class classification
+                shap_matrix = np.mean(shap_matrix, axis=2)  # Average over classes for multi-class classification
+
+        base_vals = explanation.base_values
+        if isinstance(base_vals, np.ndarray) and base_vals.ndim > 1:
+            base_vals = base_vals[:, 1] if base_vals.shape[1] == 2 else base_vals.mean(axis=1)
+
+        explanation = Explanation(
+            values=shap_matrix, base_values=base_vals, data=explanation.data, feature_names=explanation.feature_names
+        )
 
         self.logger.info(
             f"Computing SHAP interactions for model {self._runner._model_name} with data of shape: X_test {X_test.shape} and feature names: {feature_names}"
@@ -133,6 +144,12 @@ class SHAPModelExplainer:
 
             # Decision plot - how did a model arrive to a decision?
             if expected_value is not None:
+                if isinstance(expected_value, np.ndarray) and expected_value.ndim > 0:
+                    if len(expected_value) == 2:
+                        expected_value = expected_value[1]  # Positive class for binary classification
+                    elif len(expected_value) > 2:
+                        expected_value = expected_value.mean()  # Average for multi-class
+
                 n_samples = int(min(dconst.DHI_SHAP_SUBSAMPLE_SIZE, X_test.shape[0]))
                 shap.decision_plot(
                     expected_value,
