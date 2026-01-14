@@ -137,10 +137,9 @@ DHI_ML_EXPLAINER_REGISTRY: Mapping[str, Mapping[str, Any]] = {
     "svr_sklearn": {"class": shap.Explainer, "kwargs": {}},
     "svr_scratch": {"class": shap.Explainer, "kwargs": {}},
     "rf_sklearn": {"class": shap.Explainer, "kwargs": {}},
-    # NOTE: SHAP TreeExplainer is incompatible with from-scratch RF implementation due to per-tree feature subspacing,
-    # as compared to sklearn's built-in RF which uses per-split subspacing instead. Therefore, KernedExplainer will be used here
     "rf_scratch": {
-        "class": shap.Explainer,  # NOTE: SHAP requires a more complex RF implementation to accept the scratch implementation
+        "class": shap.Explainer,
         "kwargs": {},
-    },
+    },  # NOTE: SHAP TreeExplainer is incompatible with from-scratch RF implementation due to per-tree feature subspacing,
+    # as compared to sklearn's built-in RF which uses per-split subspacing instead. Therefore, KernedExplainer will be used here
 }

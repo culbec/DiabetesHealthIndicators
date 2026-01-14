@@ -1,0 +1,77 @@
+\subsection{Data Specification}
+\label{sec:data-specification}
+
+\par The input dataset consists of $100,000$ patient records characterized by features based on demographics, lifestyle habits, family history, and clinical measurements that are well-established indicators of diabetes risk. The data was generated using statistical distributions from real-world medical research, ensuring \textit{privacy preservation} while reflecting realistic health patterns. The dataset is publicly available on \href{https://www.kaggle.com/datasets/mohankrishnathalla/diabetes-health-indicators-dataset}{Kaggle}.
+
+\par Table~\ref{tbl-input-features} presents an overview of all input features used in both learning tasks. Each feature is described by its name, data type, a brief explanation, and a corresponding domain (\textit{value range}), therefore also specifying the \textbf{preconditions} of the utilized data. As confirmed by the creators of the dataset, all values fall within realistic medical ranges, matching realistic population health patterns, being a viable option when exploring lifestyle and clinical health patterns.
+
+\begin{table}[hbtp]
+	\centering
+    \resizebox{\textwidth}{!}{
+	\begin{tabular}{|l|l|p{5cm}|p{5cm}|}
+		\hline
+		\textbf{Feature} & \textbf{Type} & \textbf{Description} & \textbf{Domain} \\
+		\hline
+		patient\_id & Integer & Unique patient identifier & $\mathbb{N} \cap [1, 100000]$ \\
+		\hline
+		age & Integer & Age of patient in years & $\mathbb{N} \cap [18, 90]$ \\
+		\hline
+		gender & Categorical & Patient gender & \{Male, Female, Other\} \\
+		\hline
+		ethnicity & Categorical & Ethnic background & \{White, Hispanic, Black, Asian, Other\} \\
+		\hline
+		education\_level & Categorical & Highest completed education & \{No formal, Highschool, Graduate, Postgraduate\} \\
+		\hline
+		income\_level & Categorical & Income category & \{Low, Medium, High\} \\
+		\hline
+		employment\_status & Categorical & Employment type & \{Employed, Unemployed, Retired, Student\} \\
+		\hline
+		smoking\_status & Categorical & Smoking behavior & \{Never, Former, Current\} \\
+		\hline
+		alcohol\_consumption\_per\_week & Float & Drinks consumed per week & $\mathbb{R_+} \cap [0, 30]$ \\
+		\hline
+		physical\_activity\_minutes\_per\_week & Integer & Physical activity (weekly minutes) & $\mathbb{N} \cap [1, 100000]$ \\
+		\hline
+		diet\_score & Integer & Diet quality (higher = healthier) & $\mathbb{N} \cap [1, 10]$ \\
+		\hline
+		sleep\_hours\_per\_day & Float & Average daily sleep hours & $\mathbb{R_+} \cap [3, 12]$ \\
+		\hline
+		screen\_time\_hours\_per\_day & Float & Average daily screen time hours & $\mathbb{R_+} \cap [0, 12]$ \\
+		\hline
+		family\_history\_diabetes & Integer & Family history of diabetes & $\mathbb{N} \cap \{0, 1\}$ \\
+		\hline
+		hypertension\_history & Integer & Hypertension history & $\mathbb{N} \cap \{0, 1\}$ \\
+		\hline
+		cardiovascular\_history & Integer & Cardiovascular history & $\mathbb{N} \cap \{0, 1\}$ \\
+		\hline
+		bmi & Float & Body Mass Index ($kg/m^2$) & $\mathbb{R_+} \cap [15, 45]$ \\
+		\hline
+		waist\_to\_hip\_ratio & Float & Waist-to-hip ratio & $\mathbb{R_+} \cap [0.7, 1.2]$ \\
+		\hline
+		systolic\_bp & Integer & Systolic blood pressure ($mmHg$) & $\mathbb{N} \cap [90, 180]$ \\
+		\hline
+		diastolic\_bp & Integer & Diastolic blood pressure ($mmHg$) & $\mathbb{N} \cap [60, 120]$ \\
+		\hline
+		heart\_rate & Integer & Resting heart rate ($bpm$) & $\mathbb{N} \cap [50, 120]$ \\
+		\hline
+		cholesterol\_total & Float & Total cholesterol ($mg/dL$) & $\mathbb{R_+} \cap [120, 30]$ \\
+		\hline
+		hdl\_cholesterol & Float & HDL cholesterol ($mg/dL$) & $\mathbb{R_+} \cap [20, 100]$ \\
+		\hline
+		ldl\_cholesterol & Float & LDL cholesterol ($mg/dL$) & $\mathbb{R_+} \cap [50, 200]$ \\
+		\hline
+		triglycerides & Float & Triglycerides ($mg/dL$) & $\mathbb{R_+} \cap [50, 500]$ \\
+		\hline
+		glucose\_fasting & Float & Fasting glucose ($mg/dL$) & $\mathbb{R_+} \cap [70, 250]$ \\
+		\hline
+		glucose\_postprandial & Float & Post-meal glucose ($mg/dL$) & $\mathbb{R_+} \cap [90, 350]$ \\
+		\hline
+		insulin\_level & Float & Blood insulin level ($\mu U/mL$) & $\mathbb{R_+} \cap [2, 50]$ \\
+		\hline
+		hba1c & Float & HbA1c (\%) & $\mathbb{R_+} \cap [4, 14]$ \\
+		\hline
+	\end{tabular}
+    }
+	\caption{Specification and preconditions of the input features}
+	\label{tbl-input-features}
+\end{table}

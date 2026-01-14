@@ -1,0 +1,398 @@
+\subsection{Experimental Evaluation}
+\label{svr-experiments}
+
+\par Following the specification of the supervised regression task, the theoretical presentation of the SVR algorithm, and the mentions of related work in this field, this section details the architecture of the model implemented from scratch, the experimental results obtained through cross-validation and hyperparameter optimization, and a discussion that analyzes the obtained performance, the explainability of the model, a comparison to related work, and lastly the implementation details of both \textbf{sklearn} and scratch SVR implementations.
+
+\subsubsection{Experimental Setup}
+\label{svr-model-architecture}
+
+\par Table~\ref{tbl-svr-scratch-params} presents the configurable parameters for the SVR algorithm implemented from scratch, following closely the comprehensive description of the ML technique present in Section~\ref{svr-definition}.
+
+\begin{table}[hbtp]
+    \centering
+    \resizebox{\textwidth}{!}{
+        \begin{tabular}{|l|p{9cm}|l|}
+            \hline
+            \textbf{Parameter} & \textbf{Description} & \textbf{Domain} \\
+            \hline
+            kernel & Kernel function used by SVR & \{linear, poly, rbf, sigmoid\} \\
+            \hline
+            C & Regularization parameter controlling the trade-off between flatness and training errors outside the $\varepsilon$-tube & $\mathbb{R}_{+}$ \\
+            \hline
+            epsilon & $\varepsilon$-insensitive tube radius; errors within the tube do not contribute to the loss & $\mathbb{R}_{+} \cup \{\texttt{auto}\}$ \\
+            \hline
+            gamma & Kernel coefficient for \texttt{poly}, \texttt{rbf}, and \texttt{sigmoid} & $\mathbb{R}_{+} \cup \{\texttt{scale}\}$ \\
+            \hline
+            degree & Polynomial degree for \texttt{poly} kernel & $\mathbb{N}^{*}$ \\
+            \hline
+            coef0 & Independent term for \texttt{poly} and \texttt{sigmoid} & $\mathbb{R}$ \\
+            \hline
+            tol & KKT violation tolerance used for stopping and for defining ``meaningful'' progress & $\mathbb{R}_{+}$ \\
+            \hline
+            max\_iter & Maximum number of SMO iterations & $\mathbb{N}^{*}$ \\
+            \hline
+            max\_passes & Maximum number of consecutive failed passes without progress before terminating & $\mathbb{N}^{*}$ \\
+            \hline
+            cache\_kernel & Cache the full kernel matrix $K(X,X)$ (memory intensive but faster updates) & \{True, False\} \\
+            \hline
+            kernel\_batch\_size & Batch size for chunked kernel computations when caching is disabled & $\mathbb{N}^{*}$ \\
+            \hline
+            shrinking & Enables working-set shrinking during SMO & \{True, False\} \\
+            \hline
+            shrinking\_interval & Interval (in iterations) between shrinking steps; also used for periodic unshrinking checks & $\mathbb{N}^{*}$ \\
+            \hline
+            random\_state & Random seed for tie-breaking and randomized selections & $\mathbb{N}$ \\
+            \hline
+            verbose & Controls optimization logging verbosity & \{True, False\} \\
+            \hline
+        \end{tabular}
+    }
+    \caption{SVR Scratch - Parameter Grid}
+    \label{tbl-svr-scratch-params}
+\end{table}
+
+\par The optimizer is based on Sequential Minimal Optimization (SMO) for $\varepsilon$-SVR. At each iteration, SMO selects a pair of dual variables and updates them while respecting feasibility: (i) box constraints for each variable and (ii) the equality constraint. In our implementation, the first index is chosen as the variable with the largest Karush-Kuhn-Tucker (\textbf{KKT}) violation computed from the dual gradient; the second index is chosen among variables with opposite sign (to preserve the equality constraint) and with a gradient direction that yields a productive step.
+
+\paragraph{Kernel functions and hyperparameters.}
+
+\par The implementation supports the standard SVR kernels: \texttt{linear}, \texttt{poly}, \texttt{rbf}, and \texttt{sigmoid}. The kernel parameters $(\gamma, \texttt{degree}, \texttt{coef0})$ follow the same interpretation as in common libraries. In addition, the model supports:
+\begin{itemize}
+    \item \textbf{automatic} $\varepsilon$ selection (\texttt{epsilon=auto}), to adapt the tube width to the scale of the target variable;
+    \item kernel matrix caching (\texttt{cache\_kernel=True}) when memory permits;
+    \item kernel batching for memory-safe computations when caching is disabled;
+    \item shrinking (working set reduction) to temporarily remove variables unlikely to violate KKT conditions and accelerate convergence.
+\end{itemize}
+
+\par In addition, the scratch SVR implementation stores the dual variables $(\alpha, \alpha^*)$ in a contiguous vector: $\alpha = (\alpha_1, \alpha_2, \dots, \alpha_1^*, \alpha_2^*, \dots), idx(\alpha^*) = n + idx(\alpha)$, while also maintaining a sign vector $sign = \{\pm1\}^{2n}$, such that $\alpha_i: sign_i = +1$ and $\alpha_i^*: sign_{i+n}=-1$. This allows writing the prediction in a compact form while still performing coordinate updates on $\alpha$ during optimization.
+
+\paragraph{Convergence and support vectors.}
+
+\par The SMO loop stops when either (i) no more optimizable KKT violations are found, (ii) the relative range of the most recent $k$ maximum KKT violations falls below a minimum improvement threshold, (iii) the algorithm stalls and does not improve following consecutive un-shrinking of the support vector active set, or (iv) the number of maximum iterations or the maximum number of consecutive failure SMO steps is achieved. Following the optimization process, the fitting process ends in the following manner:
+
+\begin{enumerate}
+    \item We extract the support vectors for which their $beta=\alpha-\alpha^*$ is non-negligible information; this ensures that we exclude any support vectors that do not offer any meaningful information.
+    \item For resource efficiency purposes, the model stores only the support vectors and their coefficients, as well as any non-vectorial variables, with prediction being done only on the shrunk vector set; this ensures that the model stays rather compact and helps with the speed of the inference process.
+\end{enumerate}
+
+\par Algorithm~\ref{alg:svr-smo} summarizes the main SMO routine used in the from-scratch SVR. Any theoretical steps were removed to keep the explanations compact enough.
+
+\begin{algorithm}[h]
+    \caption{SMO Optimization for scratch $\varepsilon$-SVR}
+    \label{alg:svr-smo}
+    \begin{enumerate}
+        \item Initialize $a \leftarrow 0_{2n}$, $sign=\{+1_1, +1_2, \dots, +1_n, -1_{n+1}, -1_{n+2}, \dots, -1_{2n}\}$ $b \leftarrow 0$, error cache $e_i \leftarrow -y_i$.
+        \item Optionally cache $K(X,X)$; otherwise compute kernels on demand (resource constrained).
+        \item Resolve $\gamma$ according to strategy or mathematical value, resolve $\varepsilon$ according to strategy or mathematical value.
+        \item Repeat until convergence, iteration limits, or failure step limits:
+        \begin{enumerate}
+            \item Compute dual gradients (KKT signals) from the current error cache and $\varepsilon$.
+            \item Select index $i$ with maximal KKT violation.
+            \item Select index $j$ with opposite sign (to preserve $\sum (\alpha-\alpha^*) = 0$) and compatible gradient direction.
+            \item Compute feasible bounds for the pair and update $(a_i, a_j)$.
+            \item Update bias $b$ and incrementally update error cache $e$.
+            \item If shrinking is enabled: periodically shrink the active set; unshrink and re-check if necessary.
+        \end{enumerate}
+        \item Extract support vectors: $\beta_i = \alpha_i - \alpha_i^*$, keep indices with $|\beta_i| > \tau$.
+    \end{enumerate}
+\end{algorithm}
+
+\par The necessary KKT conditions in our case are defined by:
+\begin{enumerate}
+    \item $\alpha \approx 0, gradient \le 0$: the coefficient is close to 0 and it wants to decrease, so no optimization can be applied;
+    \item $\alpha \approx C, gradient \ge 0$: the coefficient is close to the box bounds defined by the $C$ regularization parameter, and it wants to increase, so no optimization can be applied.
+\end{enumerate}
+
+\par These conditions ensure that we select the most appropriate coefficient to be optimized, ensuring also that we do not select any coefficients that cannot benefit from further optimization.
+
+\par The shrinking applies to those support vectors that are near bounds and do not show any optimization potential, because they would get out of bounds. This ensures that the algorithm does not enter an infinite loop and prevents noisy vectors from blocking the optimization step.
+
+\par Regarding early stopping and performance optimizations:
+
+\begin{itemize}
+    \item We have limited the data type for array-specific operations to single-precision floating-point numbers in order to prevent out-of-memory crashes.
+    \item Early stopping occurs with respect to the objective function, allowing the model to converge faster if improvements of the KKT violations are not significant; a violation window of at most $10$ violations and an improvement threshold of $5\%$ were used, ensuring an acceptable range of maximum violations and an acceptable improvement ratio to improve on.
+\end{itemize}
+
+\par The general cross-validation and hyperparameter optimization pipeline is detailed in Section~\ref{svr-experimental-results}, which includes a detailed discussion on the obtained results, the grid search cross-validation scratch implementation, and how parameters of this model are selected to provide the best results possible.
+
+\par The above-presented model architecture respects the "from scratch" implementation constraints and also respects the mathematical foundations presented in~\cite{drucker1996support}. Purely implemented in Python, this architecture represents a venerable alternative to \textbf{sklearn}'s SVR implementation, which will be detailed later in this section.
+
+\subsubsection{Experimental Results}
+\label{svr-experimental-results}
+
+\par We evaluate the from-scratch SVR implementation under a supervised regression protocol using a $80\%/20\%$ train/test split. All hyperparameter tuning is performed \textit{only} on the training portion of the dataset using a k-fold cross-validation, and the final reported test metrics are computed on the held-out test split.
+
+\par Hyperparameter optimization is implemented via an exhaustive grid search cross validation. Each candidate configuration is trained on each fold and evaluated using appropriate regression metrics. The best model, selected by a primary refit metric (RMSE in this case), is refit on the full training split using the best cross-validation configuration. This methodology is applied identically to our from-scratch SVR and to \textbf{sklearn}'s SVR to ensure a fair comparison.
+
+\paragraph{Cross-validation grid.}
+
+\par For both \textbf{sklearn} and scratch implementations of SVR, we have provided the parameter grid described in Table~\ref{tbl-svr-scratch-param-grid}. The SMO tolerance and epsilon radius were left with default values, specifically: $tol = 1e-3$, $\epsilon = auto$. The $\epsilon$ parameter scales according to the standard deviation of the target variable instead of keeping it fixed so that the model tries to fit the insensitive error tube according to the domain of the target variable. A \texttt{null} $gamma$ resume is a $scale$ gamma resolution approach. Each instance of the from-scratch SVR model was trained with $50$ maximum failure passes, $50000$ maximum iterations, applied shrinking at $50$ iterations, and a kernel computation batching size of $5000$. The kernel was not cached due to limited computational resources.
+
+\par Due to the fact that our data did not show any sigmoidal shape, we chose to exclude it $kernel=sigmoid$ from the parameter grid, as this kernel has very specific use cases, like the one mentioned before. This type of kernel tries to fit the data within a complex boundary and might not generalize well on unseen instances, making it less popular than other kernels.
+
+\begin{table}[h]
+	\centering
+    \resizebox{0.6\textwidth}{!}{
+	\begin{tabular}{|l|l|}
+		\hline
+		\textbf{Parameter} & \textbf{Value Space} \\
+		\hline
+        kernel & \{linear, poly, rbf\} \\
+        \hline
+        C & [0.5, 0.75, 1, 1.5] \\
+        \hline
+        gamma & [scale] \\
+        \hline
+        degree & [3, 4, 5] \\
+        \hline
+        coef0 & [0.0, 0.5, 1.0] \\
+		\hline
+	\end{tabular}
+    }
+	\caption{SVR - Cross-Validation Parameter Grid}
+	\label{tbl-svr-scratch-param-grid}
+\end{table}
+
+\par We used $5$ folds to perform the cross-validation fitting, along with $44$ candidates resulting from the parameter grid. The actual number of candidate, $44$, is lower than the total number of configurations $81$, due to grid pruning in our configurations, which removed combinations that are not relevant. For example, a linear kernel does not use $gamma$, $degree$, or $coef0$, while an RBF kernel uses just $gamma$ and $coef0$.
+
+\paragraph{Result interpretation.}
+
+\par Table~\ref{tbl-svr-scratch-results-best} reflects the results of the best from-scratch SVR model that resulted from the cross-validation pipeline: $SVR(kernel=rbf,C=1.0,gamma=scale,epsilon=auto)$.
+
+\begin{table}[h]
+	\centering
+    \resizebox{0.65\textwidth}{!}{
+	\begin{tabular}{|l|l|}
+		\hline
+		\textbf{Metric} & \textbf{Value} \\
+		\hline
+        Mean Absolute Error (\textbf{MAE}) & $2.400320$ \\
+        \hline
+        Mean Absolute Percentange Error (\textbf{MAPE}) & $9.253411\%$ \\
+        \hline
+        Mean Squared Error (\textbf{MSE}) & $8.877404$ \\
+        \hline
+        Median Absolute Error & $2.050436$ \\
+        \hline
+        Root Mean Squared Error (\textbf{RMSE}) & $2.979497$ \\
+        \hline
+        Normalized Root Mean Squared Error (\textbf{NRMSE}) & $0.098380$ \\
+		\hline
+        Coefficient of Determination ($R^2$) & $0.892843$ \\
+		\hline
+        Mean Squared Log Error (\textbf{MSLE}) & $0.012509$ \\
+		\hline
+        Root Mean Squared Log Error (\textbf{RMSLE}) & $0.111847$ \\
+		\hline
+	\end{tabular}
+    }
+	\caption{SVR Scratch - Best Estimator Performance Results}
+	\label{tbl-svr-scratch-results-best}
+\end{table}
+
+\paragraph{Statistical analysis of cross-validation results.}
+
+\par Along with the classical evaluation metrics for regression, Table~\ref{tbl-svr-scratch-cv-stats} contains a collection of statistical values of cross-validation fold scores. We used the Shapiro-Wilk test in order to test whether the fold scores follow a normal distribution or not and the Student's t-distribution to compute a confidence interval for the mean of the fold scores using a $95\%$ confidence level.
+
+\begin{table}[H]
+	\centering
+    \resizebox{0.9\textwidth}{!}{
+	\begin{tabular}{|l|l|}
+		\hline
+		\textbf{Key} & \textbf{Value} \\
+		\hline
+        Refit Metric & RMSE \\
+        \hline
+        Best Model Parameters & $\{kernel=rbf, C=1.0, gamma=scale, epsilon=auto\}$ \\
+        \hline
+        Fold Scores & $(5.035965, 4.370107, 4.460083, 4.646090, 2.912629)$ \\
+        \hline
+        Mean & $4.284975$ \\
+        \hline
+        Standard Deviation & $0.808646$ \\
+        \hline
+        Standard Deviation Error & $0.361637$ \\
+        \hline
+        Median & $4.460083$ \\
+        \hline
+        Min & $2.912629$ \\
+        \hline
+        Max & $5.035965$ \\
+        \hline
+        IQR & $0.275983$ \\
+        \hline
+        Q1 & $4.370107$ \\
+        \hline
+        Q3 & $4.646090$ \\
+        \hline
+        Coefficient of Variation & $18.871666$ \\
+        \hline
+        Number of Samples & $5$ \\
+        \hline
+        Confidence Interval - Lower Bound & $3.280908$ \\
+        \hline
+        Confidence Interval - Upper Bound & $5.289042$ \\
+        \hline
+        Confidence Interval - Confidence Level & $0.95$ \\
+        \hline
+        Confidence Interval - Point to Estimate (Mean) & $4.284975$ \\
+        \hline
+        Confidence Interval - Margin of Error & $1.004066$ \\
+        \hline
+        Normality Test - Statistic & $0.835010$ \\
+        \hline
+        Normality Test - p-Value & $0.151595$ \\
+        \hline
+        Normality Test - Is Normal? & $True$ \\
+        \hline
+        Normality Test - $\alpha$ & $0.05$ \\
+        \hline
+	\end{tabular}
+    }
+	\caption{SVR Scratch - Statistical Analysis of Cross-Validation Folds}
+	\label{tbl-svr-scratch-cv-stats}
+\end{table}
+
+\subsubsection{Discussion}
+\label{svr-discussion}
+
+\par The previous section presented the cross-validation parameter grid, the performance results of the best estimator resulted from exhaustive grid search cross-validation, and a statistical analysis of the cross-validation results with respect to the fold scores of this resulting best estimator.
+
+\paragraph{Discussion on achieved results.}
+
+\par We consider the results presented in Table~\ref{tbl-svr-scratch-results-best} impressive, considering the from-scratch implementation of SVR and the collection of problems that can be encountered in the development of such a solution. The value range of the test target split is $[4, 62]$, encompassing $58$ units which should account for most typical clinical cases.
+
+\begin{itemize}
+    \item The \texttt{median absolute error} suggests that half of the predictions have an error of $\approx 2.05$ points or less; this can be considered as the baseline performance of the model, resulting in a highly accurate model for the vast majority of patients.
+    \item A \texttt{MAE} of $\approx 2.40$, which is greater than the baseline error of $\approx 2.05$ by $\approx 14.58\%$, confirms that the error distribution is possibly right-skewed; in other words: the model is generally precise, but a small subset of this dataset contains some samples for which the SVR struggles.
+    \item A \texttt{MSE} of $\approx 8.87$ and a \texttt{RMSE} of $\approx 2.98$ provide a general idea on how some errors affected the model's performance and how it generally behaves on inference; a \texttt{MSE} value of $\approx 9$, combined with the other metrics, suggests that generally the errors are small, but those few errors around $\approx 11$ heavily impacted the model's performance; on the other hand, \texttt{RMSE} essentially represents the standard deviation of the computed errors, and an error band of $\approx \pm 3$ suggests that the model is stable.
+    \item A \texttt{NRMSE} of $\approx 0.098$ measures the prediction quality of the model acceptably well; it indicates that the \texttt{RMSE} represents only $\approx 9.8\%$ of the data's central tendency, resulting in actually lower errors in practice.
+    \item Given the low minimum value of our target test split ($\approx 4.2$), a \texttt{MAPE} of $\approx 9\%$ suggests that the model does not fail catastrophically with low-risk patients; otherwise, this percentage would be much greater.
+    \item A \texttt{MSLE} of $\approx 0.012$ and \texttt{RMSLE} of $\approx 0.112$ capture the order of magnitude of the risk score predicted especially well; these two metrics dampen the effect of outliers and focus on relative error, indicating that the resulting model is unbiased.
+    \item As for the "goodness of fit", a $R^2$ score of $\approx 89.3\%$ suggests that the model successfully explains $\approx 89.3\%$ of the variance in the risk score range; this demonstrates that the from-scratch implementation of the SVR model has a high predictive fidelity. 
+\end{itemize}
+
+\par As for the cross-validation results presented in Table~\ref{tbl-svr-scratch-cv-stats}, we conducted an interpretation in the following manner:
+
+\begin{itemize}
+    \item The \texttt{mean RMSE} of $\approx 4.28$ represents the expected generalization error of the model when trained on partial data. Notably, this is higher than the final test RMSE ($\approx 2.98$), indicating that the model benefits significantly from the increased training size during the final refit phase.
+    \item A \texttt{standard deviation} of $\approx 0.81$ and a \texttt{coefficient of variation} of $\approx 18.87\%$ highlight a moderate degree of variance in model performance. This sensitivity suggests that the distribution of "hard-to-predict" outliers (discussed in the test results) is not uniform across all folds.
+    \item The gap between the \texttt{min RMSE} ($\approx 2.91$) and \texttt{max RMSE} ($\approx 5.04$) is significant. The best-performing fold achieved an error nearly identical to the final test set ($\approx 2.98$), confirming that under favorable data distributions, the scratch implementation achieves optimal convergence.
+    \item The \texttt{95\% confidence interval} ranges from $[3.28, 5.29]$. We can assert with $95\%$ confidence that the true average error of the model falls within this band. The fact that our final test error ($2.98$) lies slightly below this interval is a strong indicator of successful model tuning and refitting.
+    \item Finally, the \texttt{normality test} yields a $p$p-value of $\approx 0.15$ ($p > 0.05 = \alpha$), confirming that the distribution of error scores across folds is Gaussian. This validates the reliability of the mean and standard deviation metrics used above.
+\end{itemize}
+
+\paragraph{Model interpretability.}
+
+\par Regarding model interpretability, we employed a method for visualizing the support vectors, training data, error tube, and the overall predictions of some SVR model. In order to provide a meaningful representation of the support vectors, we reduced the dimensionality of the input test split to $2$ components using Principal Component Analysis (\textbf{PCA}). This enabled us to visualize how the support vectors behave and how they are spread out on the decision plane. Figure~\ref{svr-scratch:support-vectors} contains this visualization, where we can observe that the model splits the data acceptably well, where the red dashed line represents the boundary of the epsilon tube. Besides that, we used SHapley Additive exPlanations (\textbf{SHAP}) to resolve around feature importance and overall principal driving factors of the prediction. Figure~\ref{svr-scratch:shap-beeswarm}, Figure~\ref{svr-scratch:shap-bar}, Figure~\ref{svr-scratch:shap-waterfall}, and Figure~\ref{svr-scratch:shap-dependence} showcase the following SHAP results:
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[
+        width=\linewidth,
+        height=0.8\textheight,
+        keepaspectratio
+    ]{assets/figures/svr_scratch_pca_support_vectors.png}
+    \caption{SVR Scratch - Support Vectors Visualization}
+    \label{svr-scratch:support-vectors}
+\end{figure}
+
+\begin{itemize}
+    \item Figure~\ref{svr-scratch:shap-beeswarm} - Beeswarm Plot: highlights how each feature value affects the final results of the model; we can see that as age increases, so does the risk of diabetes, which is expected because there is rarely diabetes risk in young people.
+    \item Figure~\ref{svr-scratch:shap-bar} - Bar Plot: contains the overall influence of each feature used in the prediction process; the history of diabetes in one individual's family has great influence, as do age and the physical activity minutes per week; however, the glucose fasting does not have any clear influence over the model's decision-making process, typically because the amount of sugar in blood increases as we age.
+    \item Figure~\ref{svr-scratch:shap-waterfall} - Waterfall Plot: provides the SHAP values for a single prediction, enabling a local analysis on specific samples that prediction was done on; for this specific risk score of $f(x) \approx 34.494$ and the value that the model expects $E[f(x)] \approx 30.922$, we see that the physical activity minutes per week increase the risk as a history of diabetes in the family decreases it, but age here is the primary risk factor.
+    \item Figure~\ref{svr-scratch:shap-dependence} - Dependence Plot: provides an idea of how features influence each other in the final prediction process; for this plot we've chosen to visualize the dependence of glucose fasting on age in order to justify that the amount of sugar increases as people get older.
+\end{itemize}
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[
+        width=\linewidth,
+        height=\textheight,
+        keepaspectratio
+    ]{assets/figures/svr_scratch_beeswarm.png}
+    \caption{SVR Scratch - SHAP Beeswarm}
+    \label{svr-scratch:shap-beeswarm}
+\end{figure}
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[
+        width=\linewidth,
+        height=\textheight,
+        keepaspectratio
+    ]{assets/figures/svr_scratch_bar.png}
+    \caption{SVR Scratch - SHAP Bar}
+    \label{svr-scratch:shap-bar}
+\end{figure}
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[
+        width=\linewidth,
+        height=\textheight,
+        keepaspectratio
+    ]{assets/figures/svr_scratch_waterfall.png}
+    \caption{SVR Scratch - SHAP Waterfall}
+    \label{svr-scratch:shap-waterfall}
+\end{figure}
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[
+        width=0.7\linewidth,
+        height=\textheight,
+        keepaspectratio
+    ]{assets/figures/svr_scratch_dependence_glucose-fasting_age.png}
+    \caption{SVR Scratch - SHAP Dependence - Glucose Fasting vs. Age}
+    \label{svr-scratch:shap-dependence}
+\end{figure}
+
+\paragraph{Comparison to related work.}
+
+\par Unfortunately, the studied data collection is mostly a synthetically generated one; therefore, we did not find any relevant articles that employed SVR for a regression task specifically for predicting the \texttt{diabetes\_risk\_score} target variable. Thus, Table~\ref{tbl-svr-comparison-related-work} contains a comparison between performance evaluations of the \textbf{sklearn} implementation of SVR, the scratch implementation of SVR, and relevant literature, with all results having the task to be learned specified. We have also referred to classification tasks that used SVMs for classification purposes to understand the ability of this algorithm to perform on multiple domains.
+
+\begin{table}[hbtp]
+    \centering
+    \resizebox{\textwidth}{!}{
+        \begin{tabular}{|l|p{4cm}|l|l|l|l|l|l|l|l|p{4cm}|l|l|l|}
+            \hline
+            \textbf{Model} & \textbf{Learning Task} & \textbf{MAE} & \textbf{MAPE} & \textbf{MSE} & \textbf{RMSE} &  \textbf{$R^2$} & \textbf{MSLE} & \textbf{RMSLE} & \textbf{Accuracy} & \textbf{Sensitivity} & \textbf{Specificity} & \textbf{PPV} & \textbf{NPV} \\
+            \hline
+            \textbf{sklearn} & Section~\ref{svr-task} & $2.152873$ & $7.862774\%$ & $7.303286$ & $2.702459$ & $0.911876$ & $0.009594$ & $0.097953$ & - & - & - & - & -  \\
+            \hline
+            \textbf{scratch SVR} & Section~\ref{svr-task} & $2.400320$ & $9.253411\%$ & $8.877404$ & $2.979497$ & $0.892843$ & $0.012509$ & $0.111847$ & - & - & - & - & - \\
+            \hline
+            \textbf{\cite{hamdi2018accurate}} & Blood Glucose Prediction & - & $3.7416\%$ & - & $9.4483$ & $0.9715$ & - & - & - & - & - & - & - \\
+            \hline
+            \textbf{\cite{georga2013glucose}} & Hypoglycemic Event Prediction & - & - & - & - & - & - & - & - & $0.82\pm0.32, 0.78\pm0.37$ & - & - & - \\
+            \hline
+            \textbf{\cite{viloria2020diabetes}} & Diabetes Diagnosis & - & - & - & - & - & - & - & $0.9536$ & $0.9436$ & $0.9532$ & $0.9436$ & $0.9389$ \\
+            \hline
+        \end{tabular}
+    }
+    \caption{SVR - Comparison to Related Work}
+    \label{tbl-svr-comparison-related-work}
+\end{table}
+
+\par \textbf{sklearn's} SVR performance is actually close to our from-scratch SVR, which is impressive. The library baseline model is slightly more performant than our implementation, but not by far, suggesting that we correctly implemented the algorithm that \textbf{sklearn} also uses. \cite{hamdi2018accurate} proposed a blood glucose prediction learning task, where they reported \texttt{MAPE}, \texttt{RMSE}, and $R^2$, having larger values, especially for \texttt{RMSE}. This suggests that they have a higher error, all while having a good performance reflected by high $R^2$ score. The authors in~\cite{hamdi2018accurate} referred to articles written by researchers in~\cite{georga2013glucose}, the latter having better results than they achieved. Having mentioned~\cite{georga2013glucose}, they proposed a hypoglycemic event prediction task, where they achieved a sensitivity of about $82\%$, an acceptable metric regarding event forecasting. Lastly, a classification task in \cite{viloria2020diabetes} achieved surprising results using SVM, posing as an appropriate solution for diabetes diagnosis.
+
+\paragraph{Scikit-learn Implementation Details.}
+
+\par To validate the performance of our solution, we benchmarked it against the standard \texttt{sklearn.svm.SVR} estimator. This estimator is, in essence, a Python wrapper around the highly optimized \texttt{libsvm} C++ library developed by~\cite{chang2011libsvm}. Specifically, it implements the Epsilon-Support Vector Regression ($\epsilon$-SVR) algorithm, addressing the quadratic programming (QP) optimization problem via Sequential Minimal Optimization (SMO). It solves the dual formulation to identify support vectors within the $\epsilon$-tube, explicitly leveraging the kernel trick to map input vectors into high-dimensional feature space.
+
+\par It is worth noting the computational complexity of this industry-standard implementation. Since the solver relies on a kernel matrix, the fit time complexity scales between $O(n_{samples}^2 \cdot n_{features})$ and $O(n_{samples}^3 \cdot n_{features})$, depending on cache efficiency and dataset sparsity. Due to its expensiveness on large datasets, such as those with more than $100,000$ samples, we completed the training process of this estimator in approximately $50$ minutes.
+
+\par We employed the exact same experimental methodology for this estimator as for the from-scratch implementation. The same parameter grid (Table~\ref{tbl-svr-scratch-param-grid}), number of folds ($k=5$), and refit strategy were used to ensure a direct and fair comparison. Following the grid search, the best \textbf{sklearn} estimator was identified with the following hyperparameters: $SVR(kernel=poly, C=1.0, degree=4, coef0=1.0, gamma=scale, epsilon=0.1)$. The results of this library baseline estimator are reported in Table~\ref{tbl-svr-comparison-related-work}.
+
+\subsubsection{Conclusion and Future Directions}
+
+\par Concluding the study on Support Vector Regression, we proposed a base algorithm that works generally well on regression tasks, at least when predicting risk scores in clinical settings. We achieved a $\pm 3$ margin of error between predictions and actual values, resulting in a capable model that fits data accurately. We used \textbf{sklearn} as a baseline, and we achieved results comparable to an optimized version that was fine-tuned for years, confirming that our algorithm respects the modern technical requirements and expectations.
+
+\par However, there are potential future directions that we would like to work on next:
+
+\begin{enumerate}
+    \item Optimizations of the from-scratch SVR algorithm: porting to other programming languages that are faster than Python, optimizations of the mathematical operations.
+    \item Further improving the automation of feature selection: we suspect that our model underperformed, although we have used a $0.2$ threshold to select features through a majority strategy.
+    \item Experiment with from-scratch SVR in other settings: extend the SVR application domain to other fields, not just the clinical one.
+\end{enumerate}

@@ -210,7 +210,7 @@ def correlation_matrix(
 
     logger.info("Plotting of correlation matrix completed successfully")
 
-# TODO: move plot-related methods to separate feature_plots.py file and use the results from the computation methods
+
 def chi2_independence_test(
     df: pd.DataFrame,
     label_columns: list[str],

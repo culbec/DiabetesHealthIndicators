@@ -78,7 +78,7 @@ def normalized_root_mean_squared_error(
         denom = y_true.mean()
     else:
         raise ValueError(f"Invalid normalization method: {normalization}")
-    
+
     denom = float(denom)
     if abs(denom) < 1e-12:
         return float("inf")
@@ -117,6 +117,7 @@ def mean_absolute_percentage_error(y_true: np.ndarray, y_pred: np.ndarray) -> fl
     :return float: The mean absolute percentage error.
     """
     return float(np.mean(np.abs(y_true - y_pred) / np.maximum(np.finfo(float).eps, np.abs(y_true))) * 100)
+
 
 def r2_score(y_true: np.ndarray, y_pred: np.ndarray, force_finite: bool = True) -> float:
     """

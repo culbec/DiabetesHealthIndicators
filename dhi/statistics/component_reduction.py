@@ -10,7 +10,7 @@ from dhi.data.visualization.exploratory_plots import plot2d, plot3d
 
 logger = get_logger(__name__)
 
-# TODO: find a better way to separate the statistical computation logic and the plotting logic in a dimensionality_plots.py file
+
 def _component_reduction(df: pd.DataFrame, color_column: str, n_components: int, title: str, method: str) -> None:
     """
     Helper method to perform component reduction on the provided dataframe.

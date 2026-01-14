@@ -16,7 +16,7 @@
     "fbeta_micro": null,
     "fbeta_macro": null,
     "fbeta_weighted": null,
-    "log_loss": 0.21466121329563065,
-    "roc_auc": 0.9448944041919929,
-    "average_precision": 0.97216212079519
+    "log_loss": 0.2146107228515916,
+    "roc_auc": 0.9449273629847483,
+    "average_precision": 0.9721747953787941
 }

@@ -1,0 +1,165 @@
+\subsection{Random Forest Classification}
+\label{rf-definition}
+
+Random Forests \cite{breiman2001random} are ensemble learning methods that combine multiple \textbf{Decision Trees} (DTs) weak learners into a single predictive model to achieve higher accuracy and improved robustness compared to individual trees. They are based on the principles of \textit{Bagging} (Bootstrap Aggregating) \cite{breiman96bagging} and \textit{random feature subspacing}, both of which introduce diversity among the trees in the ensemble and therefore reduce variance.
+
+Decision Trees themselves are eager inductive learners that recursively partition the feature space based on splitting criteria such as \textit{Information Gain} (Entropy) or \textit{Gini impurity}. However, individual trees tend to overfit and are sensitive to noise. Random Forests overcome these limitations by combining many decorrelated trees, producing a single strong learner with significantly improved generalization performance.
+
+\subsubsection{Target function}
+\label{rf-target-function}
+
+As with all supervised classification tasks, we assume the existence of an unknown target function: 
+
+\[
+f : X \rightarrow Y,
+\]
+
+where $ X \subseteq \mathbb{R}^n $ represents the feature space and $ Y = \{0,1\} $ corresponds to the diabetes label (non-diabetic or diabetic). Each training example is a pair $ (x_i, y_i) $ drawn from an underlying joint distribution $ P(X, Y) $.
+
+The goal of Random Forest learning is to approximate $f$ with a hypothesis $h$ that achieves high predictive performance and generalizes to unseen samples.
+
+\subsubsection{Learning hypothesis}
+\label{rf-learning-hypothesis}
+
+In Random Forest classification, the hypothesis space $H$ consists of \textit{ensembles of decision trees}, where each individual hypothesis $ h_t \in H_{\text{tree}} $ corresponds to a single classification tree trained on a bootstrap sample of the dataset and using random subsets of features at each split. Since Decision Trees are high-variance learners, each $h_t$ provides only a rough approximation of the target function:
+\[
+    h_t(x) \approx f(x),
+\]
+but their errors tend to be uncorrelated when bootstrap sampling and feature subspacing are used. The Random Forest leverages this property by combining many such weak hypotheses into a single, more stable ensemble hypothesis.
+
+Formally, a Random Forest hypothesis $h$ is defined through an aggregation function $\Phi$ that combines the outputs of $T$ decision trees:
+\[
+h(x) = \Phi\big(h_1(x), h_2(x), \ldots, h_T(x)\big).
+\]
+
+In the classical Random Forest formulation used for binary classification, $\Phi$ corresponds to the \textbf{majority voting} rule. Let $Y=\{0,1\}$ be the label set. For each class $c \in Y$, define the vote count:
+\[
+V_c(x) = \sum_{t=1}^{T} \mathbf{1}\!\left[h_t(x)=c\right],
+\]
+where $\mathbf{1}[\cdot]$ is the indicator function. The ensemble prediction selects the class receiving the most votes:
+\[
+h(x) = \arg\max_{c \in \{0,1\}} V_c(x).
+\]
+
+
+In the particular case of binary classification, where each tree outputs a hard binary label $h_t(x)\in\{0,1\}$, the argmax formulation reduces to the equivalent familiar majority-threshold rule:
+\[
+h(x) =
+\begin{cases}
+1 & \text{if } \displaystyle\sum_{t=1}^{T} h_t(x) \ge \frac{T}{2}, \\[6pt]
+0 & \text{otherwise}.
+\end{cases}
+\]
+This follows because $V_1(x)=\sum_{t=1}^T h_t(x)$ and $V_0(x)=T - V_1(x)$, so selecting the class with the maximal vote count reduces to checking whether class $1$ receives at least half of the votes.
+
+Therefore, the Random Forest hypothesis represents a consensus classifier that aggregates multiple tree hypotheses to obtain a more robust approximation of the underlying target function $f$.
+
+% \par An equivalent formulation can be expressed in terms of averaged per-tree class probabilities. A decision tree can be viewed as outputting a (possibly degenerate) probability estimate $P_t(y=c\mid x)$, equal to the class frequency in the leaf reached by $x$ (or a one-hot vector in the case of hard voting). The Random Forest then estimates:
+% \[
+% \hat{P}(y=c\mid x)=\frac{1}{T}\sum_{t=1}^{T}P_t(y=c\mid x),
+% \]
+% and predicts the class with the highest aggregated probability:
+% \[
+% h(x)=\arg\max_{c\in\{0,1\}}\hat{P}(y=c\mid x).
+% \]
+
+\subsubsection{Representation of the learned function}
+\label{rf-representation}
+
+The learned Random Forest model is represented as an ensemble of $T$ independently trained decision trees. Each decision tree $h_t$ is stored as a hierarchical structure consisting of internal decision nodes and leaf nodes. An internal node contains:
+\begin{itemize}
+    \item the selected splitting feature,
+    \item the split threshold (for continuous attributes) or branch conditions (for categorical attributes),
+    \item pointers to its child nodes.
+\end{itemize}
+
+Each leaf node stores the predicted class label or, depending on the implementation, the empirical class distribution of the training samples that reach that leaf. Due to bootstrap sampling and random feature subspacing, the trees in the ensemble differ in both structure and selected features, which ensures model diversity.
+
+Therefore, the final learned function is represented internally as the collection
+\[
+\mathcal{T} = \{h_1, h_2, \dots, h_T\},
+\]
+where each $h_t$ is a full decision tree with its own feature tests, thresholds, and leaf predictions. The Random Forest stores no additional parameters: all predictive information is encoded in the structures of the individual trees.
+
+% \subsubsection{Representation of the learned function}
+
+% The learned Random Forest model consists of:
+% \begin{enumerate}
+%     \item A set of decision trees: $ \mathcal{T} = \{h_1, h_2, \dots, h_T\}, $, each represented as a hierarchical structure of internal decision nodes and leaf nodes with class labels.
+%     \item Bootstrap samples: Each tree stores information derived from its own training subset $X_t$, sampled with replacement.
+%     \item Feature subsets: At each node, a tree chooses the best split among a random subset of features of size $ m \ll n $, promoting tree diversity.
+% \end{enumerate}
+
+% The prediction for a new sample $x$ is obtained by:
+
+% \[
+% h(x) =
+% \begin{cases}
+% 1 & \text{if } \sum_{t=1}^{T} h_t(x) \ge \frac{T}{2} \\
+% 0 & \text{otherwise}.
+% \end{cases}
+% \]
+
+% Therefore, the internal representation is a collection of diverse trees whose collective decision implements the final classification rule.
+
+\subsubsection{Learning algorithm}
+\label{rf-learning-algorithm}
+
+The Random Forest learning algorithm follows the Bagging paradigm described in the ensemble learning framework and constructs an ensemble of decision trees using bootstrap sampling and random feature subspacing. The training process consists of three main stages:
+
+% \begin{enumerate}
+%     \item \textbf{Bootstrap sampling.}  
+%     For each tree $t = 1,\dots,T$, a bootstrap dataset $D_t$ is generated by sampling $n$ training instances with replacement from the original training set. Instances not included in $D_t$ form the out-of-bag samples, which may be used for internal model validation.
+
+%     \item \textbf{Tree induction.}  
+%     Each decision tree $h_t$ is grown independently. At every internal node, a random subset of $m$ features is selected from the full set of $n$ features, and the best split is chosen using an impurity measure such as the Gini index or information gain. The node is then partitioned and the process is repeated recursively until a stopping condition is met (e.g., maximum depth, minimum number of samples, or pure leaves).
+
+%     \item \textbf{Model construction.}  
+%     After training all trees, the final Random Forest model is represented as the ensemble $\mathcal{T} = \{h_1, h_2, \dots, h_T\}$. During inference, predictions are obtained by majority voting over the individual tree predictions, as described in Section~\ref{rf-learning-hypothesis}.
+% \end{enumerate}
+
+\begin{enumerate}
+    \item \textbf{Bootstrap Sampling}:
+    For each tree $t = 1,\dots,T$:
+    \begin{itemize}
+        \item draw a bootstrap dataset $D_t$ by sampling n training instances with replacement;
+    \item instances not included in $D_t$ become out-of-bag samples for internal validation.
+    \end{itemize}
+    
+    \item \textbf{Tree Induction (Weak Learner Construction)}:
+Each tree $h_t$ is trained greedily:
+\begin{itemize}
+    \item at each node, select $m$ random features from the full set of $n$;
+    \item choose the best split using an impurity measure such as Gini index or entropy;  
+    \item recursively grow the tree until a stopping criterion is met (pure leaves, maximum depth, or minimum samples).
+\end{itemize}
+
+    \item \textbf{Aggregation (Ensemble Output)}:
+After all trees are trained, the forest prediction of the model represented as $\mathcal{T} = \{h_1, h_2, \dots, h_T\}$ is obtained by majority voting over individual tree predictions, as described in Section~\ref{rf-learning-hypothesis}.
+\end{enumerate}
+
+\par A formal description of the training procedure is provided in Algorithm~\ref{alg:rf}.
+
+\begin{algorithm}[H]
+\caption{Random Forest Training Algorithm}
+\label{alg:rf}
+\begin{algorithmic}[1]
+\Require Training set $D$, number of trees $T$, feature subset size $m$
+\Ensure Ensemble of decision trees $\mathcal{T}$
+
+\State $\mathcal{T} \gets \emptyset$
+
+\For{$t = 1$ to $T$}
+    \State Draw bootstrap sample $D_t$ from $D$
+    \State Initialize empty tree $h_t$
+    \While{stopping criterion not met}
+        \State Select random subset of $m$ features
+        \State Compute the best split using Gini or entropy
+        \State Split node and create child nodes
+    \EndWhile
+    \State $\mathcal{T} \gets \mathcal{T} \cup \{h_t\}$
+\EndFor
+
+\Return $\mathcal{T}$
+\end{algorithmic}
+\end{algorithm}
