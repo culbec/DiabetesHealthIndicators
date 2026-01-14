@@ -115,7 +115,14 @@ class ExperimentRunner:
             self._save_path.parent.mkdir(parents=True, exist_ok=True)
 
         try:
-            joblib.dump(self._model, self._save_path)
+            bundle = {
+                "model": self._model,
+                "preprocessor": self._preprocessor,
+                "model_name": self._model_name,
+                "task_type": self._task_type,
+            }
+
+            joblib.dump(bundle, self._save_path)
             self.logger.info(f"Model saved to {self._save_path}")
         except Exception as e:
             self.logger.error(f"Failed to save model to {self._save_path}: {e}")
@@ -126,7 +133,12 @@ class ExperimentRunner:
             raise FileNotFoundError(f"Model file not found at {self._load_path}")
 
         try:
-            self._model = joblib.load(self._load_path)
+            bundle = joblib.load(self._load_path)
+
+            self._model = bundle.get("model", None)
+            self._preprocessor = bundle.get("preprocessor", None)
+            self._is_fitted = True
+
             self.logger.info(f"Model loaded from {self._load_path}")
         except Exception as e:
             self.logger.error(f"Failed to load model from {self._load_path}: {e}")

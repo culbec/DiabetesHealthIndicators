@@ -4,7 +4,7 @@ from .tree import Tree
 from .node import Node
 
 
-def build_graph(tree: Tree, filename: str, path: str, view: bool = True):
+def build_graph(tree: Tree, filename: str, path: str, view: bool = True) -> Digraph:
     node_attr = [("shape", "box"), ("style", "filled,rounded"), ("fontname", "helvetica")]
 
     graph = Digraph("DTree", filename=filename, directory=path, format="png", node_attr=node_attr)
