@@ -17,6 +17,7 @@ DHI_SVR_DEFAULT_C: float = 1.0
 DHI_SVR_DEFAULT_EPSILON: float | str = 1e-1
 DHI_SVR_EPSILON_SCALE_FACTOR: float = 0.1  # Multiplier for auto epsilon: epsilon = factor * std(y)
 DHI_SVR_DEFAULT_TOL: float = 1e-3
+DHI_SVR_STEP_CHANGE_TOL: float = 1e-8  # Minimum alpha change to count as progress in SMO
 DHI_SVR_DEFAULT_MAX_ITER: int = 1000
 DHI_SVR_DEFAULT_MAX_PASSES: int = 50
 DHI_SVR_GAMMA_OPTIONS: list[str] = ["scale", "auto"]
@@ -25,6 +26,10 @@ DHI_SVR_DEFAULT_DEGREE: int = 3
 DHI_SVR_DEFAULT_COEF0: float | None = None
 DHI_SVR_DEFAULT_SHRINKING: bool = True
 DHI_SVR_DEFAULT_SHRINKING_INTERVAL: int = 50
+DHI_SVR_SHRINK_GRAD_MARGIN_MULTIPLIER: float = 10.0  # Multiplier for gradient margin in shrinking
+DHI_SVR_MAX_UNSHRINK_CYCLES: int = 10  # Max consecutive unshrink cycles before stall detection
+DHI_SVR_EARLY_STOP_WINDOW: int = 10  # Number of unshrink cycles to track for early stopping
+DHI_SVR_EARLY_STOP_MIN_IMPROVEMENT: float = 0.05  # Min window variation to continue (5%)
 DHI_SVR_DEFAULT_KERNEL_BATCH_SIZE: int = 5000
 # Auto-disable kernel caching above this sample count to prevent OOM
 DHI_SVR_MAX_SAMPLES_FOR_CACHE: int = 15000
@@ -33,7 +38,7 @@ DHI_SVR_MAX_CHUNK_BYTES: int = 500 * 1024 * 1024  # 500 MB per chunk
 DHI_SVR_MIN_CHUNK_BATCH_SIZE: int = 500
 DHI_SVR_MAX_CHUNK_BATCH_SIZE: int = 5000
 
-DHI_SVR_X_NEAR_ZERO: float = 1e-12
+DHI_SVR_NEAR_ZERO_CONSTANT: float = 1e-12
 
 
 class SVRValidationError(Exception):
@@ -293,7 +298,7 @@ class SVR_(BaseEstimator, RegressorMixin):
             self.logger.debug(f"Input data variance: {X_var}")
 
             # Prevent division by zero for very small variance
-            if X_var < DHI_SVR_X_NEAR_ZERO:
+            if X_var < DHI_SVR_NEAR_ZERO_CONSTANT:
                 self.logger.warning(f"Data variance ({X_var}) is near zero, using gamma=1.0")
                 return 1.0
 
@@ -305,7 +310,7 @@ class SVR_(BaseEstimator, RegressorMixin):
                 f"Invalid gamma value: '{self.gamma}'. Expected 'scale', 'auto', or a numeric value."
             )
 
-        return float(np.clip(gamma, DHI_SVR_X_NEAR_ZERO, 1 / DHI_SVR_X_NEAR_ZERO))
+        return float(np.clip(gamma, DHI_SVR_NEAR_ZERO_CONSTANT, 1 / DHI_SVR_NEAR_ZERO_CONSTANT))
 
     def _resolve_epsilon(self, y: ArrayLike) -> float:
         """
@@ -318,9 +323,6 @@ class SVR_(BaseEstimator, RegressorMixin):
         :param y: Target values used to compute epsilon for "auto" mode.
         :return: The resolved epsilon value.
         """
-        if self.epsilon_ is not None:
-            return self.epsilon_
-        
         if isinstance(self.epsilon, (int, float)):
             return float(self.epsilon)
 
@@ -328,7 +330,7 @@ class SVR_(BaseEstimator, RegressorMixin):
             y_std = float(np.std(np.asarray(y)))
             epsilon = DHI_SVR_EPSILON_SCALE_FACTOR * y_std
             self.logger.debug(f"Using 'auto' epsilon: {DHI_SVR_EPSILON_SCALE_FACTOR} * {y_std:.4f} = {epsilon:.4f}")
-            return max(epsilon, DHI_SVR_X_NEAR_ZERO)
+            return max(epsilon, DHI_SVR_NEAR_ZERO_CONSTANT)
 
         raise SVRValidationError(f"Invalid epsilon value: '{self.epsilon}'. Expected 'auto' or a numeric value.")
 
@@ -591,11 +593,10 @@ class SVR_(BaseEstimator, RegressorMixin):
         mask_low = alpha < (self.C - np.finfo(float).eps)
         mask_high = alpha > (np.finfo(float).eps)
 
-        viol = np.zeros_like(gradient)
-        # Low alpha with positive gradient: can increase (violation magnitude = gradient)
-        viol[mask_low] = np.maximum(0.0, gradient[mask_low])
-        # High alpha with negative gradient: can decrease (violation magnitude = -gradient)
-        viol[mask_high] = np.maximum(0.0, -gradient[mask_high])
+        # Compute violations without overwriting (both masks can be True for free variables)
+        viol_increase = np.where(mask_low, np.maximum(0.0, gradient), 0.0)
+        viol_decrease = np.where(mask_high, np.maximum(0.0, -gradient), 0.0)
+        viol = np.maximum(viol_increase, viol_decrease)
 
         # Shrinking heuristic: ignore indices that are very unlikely to violate KKT conditions.
         if self.shrinking and (self.active_set_ is not None):
@@ -605,11 +606,33 @@ class SVR_(BaseEstimator, RegressorMixin):
             viol[list(ignore_indices)] = 0.0
 
         max_viol = float(np.max(viol))
-        if max_viol <= self.tol and np.all(np.abs(self.errors_) <= self.epsilon_ + self.tol):
-            self.logger.debug("No optimizable KKT violations found, algorithm converged")
+        if max_viol <= self.tol:
+            # Only log if this is likely the final convergence (all variables active)
+            if self.shrinking and (self.active_set_ is not None) and (not bool(np.all(self.active_set_))):
+                self.logger.debug(f"Active set converged (max violation {max_viol:.9f}), will unshrink and recheck")
+            else:
+                self.logger.debug(f"KKT conditions satisfied (max violation {max_viol:.9f} <= tol {self.tol:.9f})")
             return None
 
         return int(np.argmax(viol))
+
+    def _compute_max_kkt_violation(self) -> float:
+        """
+        Computes the maximum KKT violation across all variables.
+
+        Only considers actual violations (variables that can move in the violating direction).
+        """
+        alpha = self.a_
+        gradient = self.phi_cache_
+
+        mask_low = alpha < (self.C - np.finfo(float).eps)
+        mask_high = alpha > np.finfo(float).eps
+
+        viol_increase = np.where(mask_low, np.maximum(0.0, gradient), 0.0)
+        viol_decrease = np.where(mask_high, np.maximum(0.0, -gradient), 0.0)
+        viol = np.maximum(viol_increase, viol_decrease)
+
+        return float(np.max(viol))
 
     def _apply_shrinking(self) -> None:
         """
@@ -619,12 +642,16 @@ class SVR_(BaseEstimator, RegressorMixin):
         is pushing it deeper into that bound (not causing a KKT violation):
           - alpha near 0 and gradient <= 0
           - alpha near C and gradient >= 0
+
+        Uses a gradient margin to avoid premature shrinking that leads to excessive un-shrinking.
         """
         if (not self.shrinking) or (self.active_set_ is None):
             self.logger.debug("Shrinking is not enabled or the active set is None")
             return
 
         bound_eps = max(float(self.tol), float(np.finfo(float).eps))
+        # Require gradient to be sufficiently negative/positive to shrink
+        grad_margin = self.tol * DHI_SVR_SHRINK_GRAD_MARGIN_MULTIPLIER
 
         for i in range(2 * self.n_samples_):
             if not bool(self.active_set_[i]):
@@ -633,7 +660,10 @@ class SVR_(BaseEstimator, RegressorMixin):
             alpha = float(self.a_[i])
             gradient = float(self.phi_cache_[i])
 
-            if (alpha <= bound_eps and gradient <= 0.0) or (alpha >= float(self.C) - bound_eps and gradient >= 0.0):
+            # Only shrink if gradient strongly pushes into bound (more conservative)
+            if (alpha <= bound_eps and gradient <= -grad_margin) or (
+                alpha >= float(self.C) - bound_eps and gradient >= grad_margin
+            ):
                 self.active_set_[i] = False
 
     def _select_second_index(self, idx: int) -> int | None:
@@ -748,8 +778,8 @@ class SVR_(BaseEstimator, RegressorMixin):
 
         change_i = abs(alpha_i_new - alpha_i_old)
         change_j = abs(alpha_j_new - alpha_j_old)
-        threshold = 1e-8
-        if change_i < threshold and change_j < threshold:
+        # Require meaningful change to count as progress
+        if change_i < DHI_SVR_STEP_CHANGE_TOL and change_j < DHI_SVR_STEP_CHANGE_TOL:
             return False
 
         self.a_[idx_i] = alpha_i_new
@@ -764,10 +794,12 @@ class SVR_(BaseEstimator, RegressorMixin):
         j_free = (alpha_j_new > eps_bound) and (alpha_j_new < self.C - eps_bound)
 
         if i_free:
-            target_err = self.epsilon_ if idx_i < self.n_samples_ else -self.epsilon_
+            # For alpha (idx < n): optimal error = -epsilon (prediction at lower tube edge)
+            # For alpha* (idx >= n): optimal error = +epsilon (prediction at upper tube edge)
+            target_err = -self.epsilon_ if idx_i < self.n_samples_ else self.epsilon_
             self.b_ = b_old + target_err - self.errors_[ii] - sign_i * delta_i * Kii - sign_j * delta_j * Kij
         elif j_free:
-            target_err = self.epsilon_ if idx_j < self.n_samples_ else -self.epsilon_
+            target_err = -self.epsilon_ if idx_j < self.n_samples_ else self.epsilon_
             self.b_ = b_old + target_err - self.errors_[ij] - sign_i * delta_i * Kij - sign_j * delta_j * Kjj
 
         delta_b = self.b_ - b_old
@@ -797,6 +829,13 @@ class SVR_(BaseEstimator, RegressorMixin):
         # to prevent infinite loops on the same index
         failed_indices: set[int] = set()
 
+        # Track un-shrinking cycles for stall detection
+        unshrink_count = 0
+        last_unshrink_iter = 0
+
+        # Early stopping: track max violations after unshrinking
+        unshrink_violations: list[float] = []
+
         self.phi_cache_ = self._compute_phi_cache()
 
         if self.shrinking:
@@ -805,6 +844,14 @@ class SVR_(BaseEstimator, RegressorMixin):
             self.active_set_ = None
 
         while passes < self.max_passes and iters < self.max_iter:
+            if iters > 0 and iters % 2500 == 0:
+                recent_viols = unshrink_violations[-DHI_SVR_EARLY_STOP_WINDOW:] if unshrink_violations else []
+                self.logger.info(
+                    f"SMO algorithm iteration {iters}, ok steps: {ok_steps}, fail steps: {fail_steps}"
+                    f", unshrink count: {unshrink_count}, last unshrink iter: {last_unshrink_iter}"
+                    f", recent max violations: {[f'{v:.9f}' for v in recent_viols]}"
+                )
+
             # Unshrink near iteration limit to catch late violations
             if self.shrinking and (self.active_set_ is not None) and (self.max_iter - iters <= shrinking_interval):
                 self.active_set_[:] = True
@@ -816,9 +863,41 @@ class SVR_(BaseEstimator, RegressorMixin):
             if i is None:
                 # Before declaring convergence, unshrink and re-check all variables
                 if self.shrinking and (self.active_set_ is not None) and (not bool(np.all(self.active_set_))):
+                    # Track consecutive unshrink cycles
+                    if iters - last_unshrink_iter < shrinking_interval:
+                        unshrink_count += 1
+                        if unshrink_count >= DHI_SVR_MAX_UNSHRINK_CYCLES:
+                            self.logger.info(
+                                f"Stall detected: {unshrink_count} consecutive unshrink cycles, terminating"
+                            )
+                            break
+                    else:
+                        unshrink_count = 0
+                    last_unshrink_iter = iters
+
                     self.active_set_[:] = True
                     failed_indices.clear()
                     self.phi_cache_ = self._compute_phi_cache()
+
+                    # Early stopping: track actual KKT violation after unshrinking
+                    current_max_viol = self._compute_max_kkt_violation()
+                    unshrink_violations.append(current_max_viol)
+
+                    # Check if violations have stagnated (small window variation)
+                    if len(unshrink_violations) >= DHI_SVR_EARLY_STOP_WINDOW:
+                        window = unshrink_violations[-DHI_SVR_EARLY_STOP_WINDOW:]
+                        best_in_window = min(window)
+                        worst_in_window = max(window)
+                        window_range = worst_in_window - best_in_window
+                        relative_range = window_range / (worst_in_window + 1e-12)
+
+                        if relative_range < DHI_SVR_EARLY_STOP_MIN_IMPROVEMENT:
+                            self.logger.info(
+                                f"Early stopping: window range {best_in_window:.9f} to {worst_in_window:.9f} "
+                                f"(variation {relative_range:.2%} < {DHI_SVR_EARLY_STOP_MIN_IMPROVEMENT:.0%} threshold)"
+                            )
+                            break
+
                     continue
 
                 self.logger.info("No optimizable KKT violations found, algorithm converged")
@@ -864,12 +943,26 @@ class SVR_(BaseEstimator, RegressorMixin):
             failed_indices.add(i)
             iters += 1
 
+        if self.shrinking and (self.active_set_ is not None):
+            self.active_set_[:] = True
+            self.phi_cache_ = self._compute_phi_cache()
+
         if passes >= self.max_passes:
             self.logger.debug(f"SMO algorithm did not converge after {self.max_passes} passes")
         if iters >= self.max_iter:
             self.logger.debug(f"SMO algorithm did not converge after {self.max_iter} iterations")
 
         self.logger.debug(f"SMO algorithm OK steps: {ok_steps}, fail steps: {fail_steps}")
+
+        # Diagnostic: check optimization state
+        max_kkt_viol = float(np.max(np.abs(self.phi_cache_)))
+        alpha_sum = float(np.sum(self.a_[: self.n_samples_]))
+        alpha_star_sum = float(np.sum(self.a_[self.n_samples_ :]))
+        self.logger.debug(
+            f"SMO state: bias={self.b_:.9f}, max_kkt_viol={max_kkt_viol:.9f}, "
+            f"sum(alpha)={alpha_sum:.9f}, sum(alpha*)={alpha_star_sum:.9f}, "
+            f"constraint violation={abs(alpha_sum - alpha_star_sum):.9f}"
+        )
 
         # Free SMO working arrays before final error computation to reduce memory pressure
         del self.phi_cache_
@@ -953,20 +1046,55 @@ class SVR_(BaseEstimator, RegressorMixin):
 
         self._smo_optimize()
 
+        # Recompute final errors to eliminate numerical drift from incremental updates
+        beta = self.a_[: self.n_samples_] - self.a_[self.n_samples_ :]
+        if self.kernel_matrix_ is not None:
+            f = beta @ self.kernel_matrix_ + self.b_
+            self.errors_ = (f - self.y_).astype(np.float32)
+        else:
+            # Chunked kernel computation to limit memory usage
+            batch_size = max(DHI_SVR_DEFAULT_KERNEL_BATCH_SIZE, self.kernel_batch_size)
+            self.errors_ = np.empty(self.n_samples_, dtype=np.float32)
+            for start in range(0, self.n_samples_, batch_size):
+                end = min(start + batch_size, self.n_samples_)
+                K_chunk = self._compute_kernel_matrix(self.X_, self.X_[start:end])
+                f_chunk = beta @ K_chunk + self.b_
+                self.errors_[start:end] = f_chunk - self.y_[start:end]
+
+        # Diagnostic: prediction statistics on training data
+        predictions = self.errors_ + self.y_
+        self.logger.debug(
+            f"Training predictions: min={predictions.min():.4f}, max={predictions.max():.4f}, "
+            f"mean={predictions.mean():.4f}, std={predictions.std():.4f}"
+        )
+        self.logger.debug(
+            f"Training targets: min={self.y_.min():.4f}, max={self.y_.max():.4f}, "
+            f"mean={self.y_.mean():.4f}, std={self.y_.std():.4f}"
+        )
+        self.logger.debug(
+            f"Training errors: min={self.errors_.min():.4f}, max={self.errors_.max():.4f}, "
+            f"RMSE={np.sqrt(np.mean(self.errors_**2)):.4f}"
+        )
+
         self.alpha_, self.alpha_star_ = (
             self.a_[: self.n_samples_].copy(),
             self.a_[self.n_samples_ :].copy(),
         )
         self.dual_coef_ = (self.alpha_ - self.alpha_star_).astype(np.float32)
 
-        # Counting the support vectors as the most closer ones to the error tube
-        self.support_ = np.nonzero(np.abs(self.dual_coef_) > self.epsilon_)[0]
+        # Identify support vectors as samples with non-zero dual coefficients
+        self.support_ = np.nonzero(np.abs(self.dual_coef_) > DHI_SVR_NEAR_ZERO_CONSTANT)[0]
 
         # Handle edge case: no support vectors found (SMO didn't converge or trivial solution)
         if len(self.support_) == 0:
             self.logger.warning(
-                "No support vectors found (all dual coefficients below epsilon). "
-                "Model will predict bias only. Consider increasin max_iter or adjusting epsilon."
+                "No support vectors found (all dual coefficients are zero (approx. %f)). "
+                "Model will predict bias only. Consider increasing max_iter. "
+                "Current max_iter=%d."
+                % (
+                    DHI_SVR_NEAR_ZERO_CONSTANT,
+                    self.max_iter,
+                )
             )
             # Keep empty arrays but mark model as fitted
             self.support_vectors_ = np.asarray([], dtype=np.float32).reshape(0, self.n_features_in_)
@@ -1069,12 +1197,14 @@ def plot_svr_predictions(
     X: ArrayLike,
     y: ArrayLike,
     *,
+    estimator_name: str = "SVR",
     feature_indices: tuple[int, int] = (0, 1),
     feature_names: Optional[tuple[str, str]] = None,
     grid_resolution: int = 100,
     colorscale: str = "RdYlBu_r",
     opacity: float = 0.7,
     show_training_data: bool = True,
+    max_training_data_display: Optional[int] = None,
     support_vectors: bool = True,
     max_sv_display: Optional[int] = None,
     show_contours: bool = True,
@@ -1099,12 +1229,14 @@ def plot_svr_predictions(
     :param estimator: A fitted SVR model (sklearn SVR or custom SVR_).
     :param ArrayLike X: Training data of shape (n_samples, n_features).
     :param ArrayLike y: Target values of shape (n_samples,).
+    :param str estimator_name: Name of the estimator to use for the title.
     :param tuple[int, int] feature_indices: Indices of the two features to use for 2D visualization.
     :param Optional[tuple[str, str]] feature_names: Names of the two features for axis labels.
     :param int grid_resolution: Resolution of the prediction grid.
     :param str colorscale: Plotly colorscale for the prediction surface.
     :param float opacity: Transparency of the prediction surface (0-1).
     :param bool show_training_data: Whether to show training data points.
+    :param Optional[int] max_training_data_display: Maximum number of training data points to display. If None, shows all.
     :param bool support_vectors: Whether to highlight support vectors.
     :param Optional[int] max_sv_display: Maximum number of support vectors to display. If None, shows all.
         When limited, selects SVs with highest dual coefficient magnitude (most influential).
@@ -1231,12 +1363,20 @@ def plot_svr_predictions(
             )
 
     if show_training_data:
+        # Picking random points
+        if max_training_data_display is not None:
+            rng = np.random.default_rng(seed=42)
+            indices = rng.choice(X.shape[0], size=max_training_data_display, replace=False)
+            X_2d = X_2d[indices]
+            y = y[indices]
+
         fig.add_trace(
             go.Scatter(
                 x=X_2d[:, 0],
                 y=X_2d[:, 1],
                 mode="markers",
                 marker={
+                    "symbol": "square",
                     "size": scatter_size,
                     "color": y,
                     "colorscale": colorscale,
@@ -1311,8 +1451,8 @@ def plot_svr_predictions(
                     y=sv_2d[:, 1],
                     mode="markers",
                     marker={
+                        "symbol": "diamond",
                         "size": sv_size,
-                        "symbol": "circle",
                         "color": sv_predictions,
                         "colorscale": colorscale,
                         "cmin": y.min(),
@@ -1327,7 +1467,7 @@ def plot_svr_predictions(
 
     if title is None:
         kernel = getattr(estimator, "kernel", "unknown")
-        title = f"{repr(estimator)} Predictions ({kernel} kernel)"
+        title = f"{estimator_name} Predictions ({kernel} kernel)"
 
     fig.update_layout(
         title={"text": title, "x": 0.5, "xanchor": "center"},

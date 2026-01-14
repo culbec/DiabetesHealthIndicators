@@ -555,20 +555,20 @@ def format_cv_statistics_report(cv_stats: CVFoldStatistics, metric_name: str = "
         "=" * 50,
         "",
         "Descriptive Statistics:",
-        f"  Mean:      {cv_stats.descriptive.mean:.6f}",
-        f"  Std Dev:   {cv_stats.descriptive.std:.6f}",
-        f"  Std Error: {cv_stats.descriptive.std_error:.6f}",
-        f"  Median:    {cv_stats.descriptive.median:.6f}",
-        f"  Min:       {cv_stats.descriptive.min:.6f}",
-        f"  Max:       {cv_stats.descriptive.max:.6f}",
-        f"  IQR:       {cv_stats.descriptive.iqr:.6f} "
-        f"(Q1={cv_stats.descriptive.q1:.6f}, Q3={cv_stats.descriptive.q3:.6f})",
+        f"  Mean:      {cv_stats.descriptive.mean:.9f}",
+        f"  Std Dev:   {cv_stats.descriptive.std:.9f}",
+        f"  Std Error: {cv_stats.descriptive.std_error:.9f}",
+        f"  Median:    {cv_stats.descriptive.median:.9f}",
+        f"  Min:       {cv_stats.descriptive.min:.9f}",
+        f"  Max:       {cv_stats.descriptive.max:.9f}",
+        f"  IQR:       {cv_stats.descriptive.iqr:.9f} "
+        f"(Q1={cv_stats.descriptive.q1:.9f}, Q3={cv_stats.descriptive.q3:.9f})",
         f"  CV:        {cv_stats.descriptive.coefficient_of_variation:.2f}%",
         f"  N folds:   {cv_stats.descriptive.n_samples}",
         "",
         f"Confidence Interval ({cv_stats.confidence_interval.confidence_level*100:.0f}%):",
-        f"  [{cv_stats.confidence_interval.lower:.6f}, {cv_stats.confidence_interval.upper:.6f}]",
-        f"  Margin of error: +/-{cv_stats.confidence_interval.margin_of_error:.6f}",
+        f"  [{cv_stats.confidence_interval.lower:.9f}, {cv_stats.confidence_interval.upper:.9f}]",
+        f"  Margin of error: +/-{cv_stats.confidence_interval.margin_of_error:.9f}",
     ]
 
     # Append normality test results if available
@@ -579,8 +579,8 @@ def format_cv_statistics_report(cv_stats: CVFoldStatistics, metric_name: str = "
             [
                 "",
                 f"Normality Test (Shapiro-Wilk, alpha={nt.alpha}):",
-                f"  Statistic: {nt.statistic:.6f}",
-                f"  p-value:   {nt.p_value:.6f}",
+                f"  Statistic: {nt.statistic:.9f}",
+                f"  p-value:   {nt.p_value:.9f}",
                 f"  Normal:    {normal_str}",
             ]
         )
@@ -603,13 +603,13 @@ def format_model_comparison_report(comparison: ModelComparisonResult) -> str:
         "=" * 60,
         "",
         "Mean Scores:",
-        f"  {comparison.model_a_name}: {comparison.model_a_mean:.6f}",
-        f"  {comparison.model_b_name}: {comparison.model_b_mean:.6f}",
-        f"  Difference (A - B): {comparison.mean_difference:.6f}",
+        f"  {comparison.model_a_name}: {comparison.model_a_mean:.9f}",
+        f"  {comparison.model_b_name}: {comparison.model_b_mean:.9f}",
+        f"  Difference (A - B): {comparison.mean_difference:.9f}",
         "",
         f"Paired t-test (alpha={comparison.paired_ttest.alpha}):",
-        f"  t-statistic: {comparison.paired_ttest.statistic:.6f}",
-        f"  p-value:     {comparison.paired_ttest.p_value:.6f}",
+        f"  t-statistic: {comparison.paired_ttest.statistic:.9f}",
+        f"  p-value:     {comparison.paired_ttest.p_value:.9f}",
         f"  Significant: {'Yes' if comparison.paired_ttest.is_significant else 'No'}",
     ]
 
@@ -627,8 +627,8 @@ def format_model_comparison_report(comparison: ModelComparisonResult) -> str:
             [
                 "",
                 f"Wilcoxon Signed-Rank Test (alpha={wt.alpha}):",
-                f"  W-statistic: {wt.statistic:.6f}",
-                f"  p-value:     {wt.p_value:.6f}",
+                f"  W-statistic: {wt.statistic:.9f}",
+                f"  p-value:     {wt.p_value:.9f}",
                 f"  Significant: {'Yes' if wt.is_significant else 'No'}",
             ]
         )

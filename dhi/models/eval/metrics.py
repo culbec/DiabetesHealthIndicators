@@ -116,9 +116,7 @@ def mean_absolute_percentage_error(y_true: np.ndarray, y_pred: np.ndarray) -> fl
     :param np.ndarray y_pred: The predicted labels.
     :return float: The mean absolute percentage error.
     """
-    denominator = np.maximum(np.finfo(float).eps, np.abs(y_true))
-    return float(np.mean(np.abs(y_true - y_pred) / denominator))
-
+    return float(np.mean(np.abs(y_true - y_pred) / np.maximum(np.finfo(float).eps, np.abs(y_true))) * 100)
 
 def r2_score(y_true: np.ndarray, y_pred: np.ndarray, force_finite: bool = True) -> float:
     """
